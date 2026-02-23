@@ -1,4 +1,4 @@
-var CACHE_NAME = 'library-v2';
+var CACHE_NAME = 'library-v3';
 var STATIC_ASSETS = [
     '/',
     '/books',

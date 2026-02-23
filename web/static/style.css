@@ -605,34 +605,15 @@ select.form-input { appearance: auto; }
 
 /* === Scanner === */
 .scan-page { max-width: 500px; margin: 0 auto; }
-.scanner-container {
-    position: relative;
-    background: #000;
-    border-radius: var(--radius);
-    overflow: hidden;
-    margin: 1rem 0;
-    display: none;
-}
-.scanner-container.active { display: block; }
-#scannerVideo { width: 100%; display: block; }
-.scanner-overlay {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-.scanner-frame {
-    width: 70%;
-    height: 30%;
-    border: 2px solid var(--accent);
-    border-radius: 8px;
-    box-shadow: 0 0 0 9999px rgba(0,0,0,0.3);
-}
-.scanner-hint { text-align: center; font-size: 0.8rem; color: var(--text-muted); margin: 0.5rem 0; }
+#scannerRegion { border-radius: var(--radius); overflow: hidden; }
+#scannerRegion video { border-radius: var(--radius); }
 .scanner-controls { display: flex; gap: 0.5rem; justify-content: center; margin: 1rem 0; }
 .manual-entry { margin: 1.5rem 0; }
 .lookup-result { margin: 1.5rem 0; }
+.notice { padding: 0.75rem 1rem; border-radius: var(--radius-sm); margin: 1rem 0; font-size: 0.9rem; }
+.notice-warning { background: var(--warning); color: #000; }
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-danger:hover { opacity: 0.9; }
 .result-card {
     background: var(--bg-card);
     border: 1px solid var(--border-light);
