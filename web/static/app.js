@@ -60,6 +60,10 @@ window.addEventListener('offline', function() {
     if (!trigger || !menu) return;
 
     trigger.addEventListener('click', function(e) {
+        // Only toggle menu if the click is NOT on a menu link
+        // (let links navigate normally)
+        if (e.target.closest('.more-menu-item')) return;
+
         e.preventDefault();
         e.stopPropagation();
         menu.classList.toggle('open');
