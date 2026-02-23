@@ -35,9 +35,9 @@
 // === Service Worker Registration ===
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', function() {
-        navigator.serviceWorker.register('/static/sw.js')
+        navigator.serviceWorker.register('/sw.js', {scope: '/'})
             .then(function(reg) {
-                console.log('SW registered:', reg.scope);
+                console.log('SW registered, scope:', reg.scope);
             })
             .catch(function(err) {
                 console.log('SW registration failed:', err);

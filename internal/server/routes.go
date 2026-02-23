@@ -201,6 +201,14 @@ func (s *Server) Start() error {
 	staticDir := filepath.Join(s.dataDir, "..", "web", "static")
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir(staticDir))))
 
+	// --- Service Worker (must be served from root for root scope) ---
+	mux.HandleFunc("/sw.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/javascript")
+		w.Header().Set("Service-Worker-Allowed", "/")
+		w.Header().Set("Cache-Control", "no-cache")
+		http.ServeFile(w, r, filepath.Join(staticDir, "sw.js"))
+	})
+
 	// Apply middleware
 	handler := logging(cors(mux))
 
