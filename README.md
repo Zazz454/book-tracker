@@ -5,6 +5,7 @@ A personal library catalog with a Go REST API server, web UI (PWA), and CLI clie
 ## Features
 
 - **Book Management** - Add, edit, delete, rate, review, and track reading status
+- **Lending & Borrowing** - Check out books to friends, track who has what, overdue warnings
 - **Cover Art** - Automatically fetched from Open Library and Google Books APIs, stored locally
 - **Custom Shelves & Tags** - Organize books into collections with flexible labels
 - **Full-Text Search** - SQLite FTS5 powered search across titles, authors, and notes
@@ -12,6 +13,7 @@ A personal library catalog with a Go REST API server, web UI (PWA), and CLI clie
 - **Barcode Scanner** - Scan ISBN barcodes with your phone camera (Chrome Android)
 - **Import/Export** - CSV and JSON import/export, including Goodreads CSV format
 - **Reading Statistics** - Track books read, pages, genres, ratings, and reading pace
+- **External Links** - Amazon buy links, WorldCat and Open Library search from book detail
 - **PWA** - Install as an app on Android, works offline after first load
 - **Auto Light/Dark Theme** - Follows system preference with manual override
 - **CLI Client** - Full-featured command-line interface for power users
@@ -20,21 +22,59 @@ A personal library catalog with a Go REST API server, web UI (PWA), and CLI clie
 
 ### Docker (Recommended)
 
+Pull the pre-built image from GitHub Container Registry and run:
+
 ```bash
 docker compose up -d
 # Open http://localhost:8080
 ```
 
-### From Source
+That's it. Data is persisted in a Docker volume (`library_data`).
+
+### Build from Source
 
 ```bash
-# Requires Go 1.22+
+# Requires Go 1.24+
 make build
 make run
 # Open http://localhost:8080
 ```
 
-### CLI
+Or build the Docker image locally:
+
+```bash
+docker build -t book-tracker .
+docker run -d -p 8080:8080 -v library_data:/app/data book-tracker
+```
+
+## Docker
+
+The `docker-compose.yml` pulls `ghcr.io/zazz454/book-tracker:latest`, which is automatically built on every push to `main`.
+
+```bash
+# Start
+docker compose up -d
+
+# View logs
+docker compose logs -f library
+
+# Stop
+docker compose down
+
+# Update to latest image
+docker compose pull && docker compose up -d
+
+# With nginx reverse proxy (production)
+docker compose --profile production up -d
+```
+
+Data is stored in a named Docker volume (`library_data`). To back it up:
+
+```bash
+docker compose cp library:/app/data ./backup
+```
+
+## CLI
 
 ```bash
 # Build the CLI
@@ -53,9 +93,29 @@ make cli
 # Search
 ./bin/library search "science fiction"
 
+# Lend a book
+./bin/library checkout 1 --person "Alice" --due 2026-04-01
+
+# Check who has your books
+./bin/library loans
+
+# Return a book
+./bin/library checkin 1
+
 # See all commands
 ./bin/library --help
 ```
+
+## Lending & Borrowing
+
+Track books you've lent out or borrowed from others:
+
+- **Lend a book** - Record who you lent it to, with optional due date
+- **Borrow a book** - Track where you borrowed it from
+- **Overdue warnings** - Dashboard alerts and nav badges for overdue items
+- **Loan history** - Full history on each book's detail page
+
+From the web UI, use the Loans tab in the bottom nav or the lend/borrow buttons on any book's detail page.
 
 ## Architecture
 
@@ -71,30 +131,11 @@ Client (CLI/Web/PWA)  -->  REST API (Go)  -->  SQLite (+ FTS5)
 - **CLI**: Cobra
 - **Web UI**: Server-side rendered Go `html/template`
 - **PWA**: Service worker, manifest, offline support
-
-## Docker
-
-```bash
-# Build and run
-docker compose up -d
-
-# View logs
-docker compose logs -f library
-
-# Stop
-docker compose down
-
-# With nginx reverse proxy (production)
-docker compose --profile production up -d
-```
-
-Data is persisted in `./data/` (mounted as a volume).
+- **CI/CD**: GitHub Actions builds and pushes Docker image to `ghcr.io` on every push to `main`
 
 ## API
 
 All endpoints are under `/api/`. See [PLAN.md](PLAN.md) for the full endpoint reference.
-
-Quick examples:
 
 ```bash
 # Add a book
@@ -107,6 +148,18 @@ curl http://localhost:8080/api/books?status=reading&sort=title
 
 # Search
 curl http://localhost:8080/api/books/search?q=dune
+
+# Lend a book
+curl -X POST http://localhost:8080/api/loans \
+  -H "Content-Type: application/json" \
+  -d '{"book_id":1,"loan_type":"lent","person_name":"Alice","due_date":"2026-04-01"}'
+
+# List active loans
+curl http://localhost:8080/api/loans?status=active
+
+# Return a book
+curl -X PATCH http://localhost:8080/api/loans/1 \
+  -H "Content-Type: application/json" -d '{}'
 
 # ISBN lookup
 curl http://localhost:8080/api/lookup/9780441172719
@@ -141,6 +194,7 @@ library/
 ├── web/
 │   ├── templates/            # HTML templates
 │   └── static/               # CSS, JS, PWA assets
+├── .github/workflows/        # CI/CD (Docker build + GHCR push)
 ├── Dockerfile
 ├── docker-compose.yml
 └── Makefile
