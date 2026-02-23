@@ -48,7 +48,14 @@ func auth(lib *service.Library) func(http.Handler) http.Handler {
 				}
 			}
 
+			semiPublic := isSemiPublicPath(path)
+
 			if token == "" {
+				if semiPublic {
+					// Let handler decide (e.g. registration when no users exist)
+					next.ServeHTTP(w, r)
+					return
+				}
 				handleUnauthorized(w, r)
 				return
 			}
@@ -63,6 +70,10 @@ func auth(lib *service.Library) func(http.Handler) http.Handler {
 					MaxAge:   -1,
 					HttpOnly: true,
 				})
+				if semiPublic {
+					next.ServeHTTP(w, r)
+					return
+				}
 				handleUnauthorized(w, r)
 				return
 			}
@@ -76,11 +87,11 @@ func auth(lib *service.Library) func(http.Handler) http.Handler {
 
 func isPublicPath(path string) bool {
 	// Auth pages
-	if path == "/login" || path == "/register" {
+	if path == "/login" {
 		return true
 	}
 	// Auth API endpoints
-	if path == "/api/auth/login" || path == "/api/auth/register" {
+	if path == "/api/auth/login" {
 		return true
 	}
 	// Static assets, service worker, covers, offline
@@ -91,6 +102,12 @@ func isPublicPath(path string) bool {
 		return true
 	}
 	return false
+}
+
+// isSemiPublicPath returns true for paths that should attempt auth
+// but not block if unauthenticated (the handler decides).
+func isSemiPublicPath(path string) bool {
+	return path == "/register" || path == "/api/auth/register"
 }
 
 func handleUnauthorized(w http.ResponseWriter, r *http.Request) {
