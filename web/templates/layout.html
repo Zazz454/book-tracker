@@ -21,6 +21,9 @@
             <div class="nav-links">
                 <a href="/" class="nav-link {{if eq .Page "home"}}active{{end}}">Home</a>
                 <a href="/books" class="nav-link {{if eq .Page "books"}}active{{end}}">Books</a>
+                <a href="/loans" class="nav-link {{if eq .Page "loans"}}active{{end}}">
+                    Loans{{if and .OverdueCount (gt .OverdueCount 0)}} <span class="nav-badge">{{.OverdueCount}}</span>{{end}}
+                </a>
                 <a href="/shelves" class="nav-link {{if eq .Page "shelves"}}active{{end}}">Shelves</a>
                 <a href="/stats" class="nav-link {{if eq .Page "stats"}}active{{end}}">Stats</a>
                 <a href="/scan" class="nav-link {{if eq .Page "scan"}}active{{end}}">Scan</a>
@@ -49,14 +52,20 @@
             <span class="nav-icon add-icon">+</span>
             <span>Add</span>
         </a>
-        <a href="/shelves" class="bottom-nav-item {{if eq .Page "shelves"}}active{{end}}">
-            <span class="nav-icon">&#128218;</span>
-            <span>Shelves</span>
+        <a href="/loans" class="bottom-nav-item {{if eq .Page "loans"}}active{{end}}">
+            <span class="nav-icon">&#128257;</span>
+            {{if and .OverdueCount (gt .OverdueCount 0)}}<span class="bottom-badge">{{.OverdueCount}}</span>{{end}}
+            <span>Loans</span>
         </a>
-        <a href="/stats" class="bottom-nav-item {{if eq .Page "stats"}}active{{end}}">
-            <span class="nav-icon">&#128200;</span>
-            <span>Stats</span>
-        </a>
+        <div class="bottom-nav-item more-trigger" id="moreToggle">
+            <span class="nav-icon">&#8943;</span>
+            <span>More</span>
+            <div class="more-menu" id="moreMenu">
+                <a href="/shelves" class="more-menu-item">&#128218; Shelves</a>
+                <a href="/stats" class="more-menu-item">&#128200; Stats</a>
+                <a href="/scan" class="more-menu-item">&#128247; Scan</a>
+            </div>
+        </div>
     </nav>
 
     <script src="/static/app.js"></script>

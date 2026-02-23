@@ -80,6 +80,24 @@ func (d *DB) migrate() error {
 			INSERT INTO books_fts(rowid, title, author, notes, genre)
 			VALUES (new.id, new.title, new.author, new.notes, new.genre);
 		END`,
+
+		// Loans table for lending and borrowing tracking
+		`CREATE TABLE IF NOT EXISTS loans (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			book_id INTEGER NOT NULL,
+			loan_type TEXT NOT NULL DEFAULT 'lent',
+			person_name TEXT NOT NULL,
+			person_contact TEXT DEFAULT '',
+			checked_out DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			due_date DATETIME,
+			checked_in DATETIME,
+			notes TEXT DEFAULT '',
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+		)`,
+
+		`CREATE INDEX IF NOT EXISTS idx_loans_book_id ON loans(book_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_loans_checked_in ON loans(checked_in)`,
 	}
 
 	for _, m := range migrations {

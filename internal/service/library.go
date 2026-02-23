@@ -8,6 +8,7 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/user/library/internal/covers"
 	"github.com/user/library/internal/db"
@@ -432,4 +433,84 @@ func getCSVField(row []string, idx map[string]int, field string) string {
 		return strings.TrimSpace(row[i])
 	}
 	return ""
+}
+
+// --- Loan operations ---
+
+// CheckOut creates a new loan (lending or borrowing).
+func (l *Library) CheckOut(req *models.CreateLoanRequest) (*models.Loan, error) {
+	if strings.TrimSpace(req.PersonName) == "" {
+		return nil, fmt.Errorf("person name is required")
+	}
+	if req.LoanType != models.LoanTypeLent && req.LoanType != models.LoanTypeBorrowed {
+		return nil, fmt.Errorf("loan_type must be 'lent' or 'borrowed'")
+	}
+	if req.BookID <= 0 {
+		return nil, fmt.Errorf("book_id is required")
+	}
+
+	// Verify book exists
+	if _, err := l.DB.GetBook(req.BookID); err != nil {
+		return nil, fmt.Errorf("book not found")
+	}
+
+	// Check if already on active loan
+	existing, _ := l.DB.GetActiveLoanForBook(req.BookID)
+	if existing != nil {
+		return nil, fmt.Errorf("book is already checked out (loan #%d)", existing.ID)
+	}
+
+	var dueDate *time.Time
+	if req.DueDate != "" {
+		t, err := time.Parse("2006-01-02", req.DueDate)
+		if err != nil {
+			return nil, fmt.Errorf("invalid due_date format, use YYYY-MM-DD")
+		}
+		dueDate = &t
+	}
+
+	id, err := l.DB.CreateLoan(req.BookID, req.LoanType, req.PersonName, req.PersonContact, req.Notes, dueDate)
+	if err != nil {
+		return nil, fmt.Errorf("create loan: %w", err)
+	}
+
+	return l.DB.GetLoan(id)
+}
+
+// CheckIn marks a loan as returned.
+func (l *Library) CheckIn(loanID int64, notes string) (*models.Loan, error) {
+	if err := l.DB.CheckInLoan(loanID, notes); err != nil {
+		return nil, err
+	}
+	return l.DB.GetLoan(loanID)
+}
+
+// GetLoan retrieves a single loan.
+func (l *Library) GetLoan(id int64) (*models.Loan, error) {
+	return l.DB.GetLoan(id)
+}
+
+// ListLoans returns loans with filtering.
+func (l *Library) ListLoans(params models.LoanListParams) (*models.LoanListResponse, error) {
+	return l.DB.ListLoans(params)
+}
+
+// GetBookLoanHistory returns all loans for a specific book.
+func (l *Library) GetBookLoanHistory(bookID int64) ([]models.Loan, error) {
+	return l.DB.GetBookLoans(bookID)
+}
+
+// GetOverdueLoans returns all active overdue loans.
+func (l *Library) GetOverdueLoans() (*models.LoanListResponse, error) {
+	return l.DB.ListLoans(models.LoanListParams{Status: "overdue", Limit: 100})
+}
+
+// GetOverdueCount returns the number of overdue loans.
+func (l *Library) GetOverdueCount() (int, error) {
+	return l.DB.GetOverdueCount()
+}
+
+// DeleteLoan removes a loan record.
+func (l *Library) DeleteLoan(id int64) error {
+	return l.DB.DeleteLoan(id)
 }

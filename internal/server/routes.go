@@ -84,6 +84,8 @@ func (s *Server) Start() error {
 			api.untagBook(w, r)
 		case subResource == "tags" && r.Method == http.MethodPost:
 			api.tagBook(w, r)
+		case subResource == "loans" && r.Method == http.MethodGet:
+			api.getBookLoans(w, r)
 		case subResource == "" && r.Method == http.MethodGet:
 			api.getBook(w, r)
 		case subResource == "" && r.Method == http.MethodPut:
@@ -151,6 +153,36 @@ func (s *Server) Start() error {
 
 	mux.HandleFunc("/api/export", func(w http.ResponseWriter, r *http.Request) {
 		api.exportData(w, r)
+	})
+
+	// Loans
+	mux.HandleFunc("/api/loans", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			api.listLoans(w, r)
+		case http.MethodPost:
+			api.createLoan(w, r)
+		default:
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		}
+	})
+
+	mux.HandleFunc("/api/loans/", func(w http.ResponseWriter, r *http.Request) {
+		segs := extractPathSegments(r.URL.Path)
+		if len(segs) < 3 {
+			writeError(w, http.StatusNotFound, "not found")
+			return
+		}
+		switch r.Method {
+		case http.MethodGet:
+			api.getLoan(w, r)
+		case http.MethodPatch:
+			api.checkInLoan(w, r)
+		case http.MethodDelete:
+			api.deleteLoan(w, r)
+		default:
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		}
 	})
 
 	// ISBN Lookup

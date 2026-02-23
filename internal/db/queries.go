@@ -56,6 +56,8 @@ func (d *DB) GetBook(id int64) (*models.Book, error) {
 	b.Shelves, _ = d.GetBookShelves(id)
 	// Load tags
 	b.Tags, _ = d.GetBookTags(id)
+	// Load active loan
+	b.ActiveLoan, _ = d.GetActiveLoanForBook(id)
 
 	return b, nil
 }
@@ -719,6 +721,10 @@ func (d *DB) GetStats() (*models.StatsResponse, error) {
 		s.ShortestBook = shortestBook
 	}
 
+	// Loan stats
+	d.QueryRow("SELECT COUNT(*) FROM loans WHERE checked_in IS NULL").Scan(&s.ActiveLoans)
+	d.QueryRow("SELECT COUNT(*) FROM loans WHERE checked_in IS NULL AND due_date IS NOT NULL AND due_date < CURRENT_TIMESTAMP").Scan(&s.OverdueCount)
+
 	return s, nil
 }
 
@@ -758,4 +764,270 @@ func (d *DB) GetAllBooks() ([]models.Book, error) {
 		books = []models.Book{}
 	}
 	return books, nil
+}
+
+// --- Loans ---
+
+// CreateLoan inserts a new loan record.
+func (d *DB) CreateLoan(bookID int64, loanType, personName, personContact, notes string, dueDate *time.Time) (int64, error) {
+	var dd interface{}
+	if dueDate != nil {
+		dd = *dueDate
+	}
+	res, err := d.Exec(
+		`INSERT INTO loans (book_id, loan_type, person_name, person_contact, due_date, notes)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		bookID, loanType, personName, personContact, dd, notes,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+// GetLoan retrieves a single loan by ID with book info.
+func (d *DB) GetLoan(id int64) (*models.Loan, error) {
+	l := &models.Loan{}
+	var dueDate, checkedIn sql.NullTime
+	var bookTitle, bookAuthor, bookCoverPath string
+	err := d.QueryRow(
+		`SELECT l.id, l.book_id, l.loan_type, l.person_name, l.person_contact,
+		        l.checked_out, l.due_date, l.checked_in, l.notes, l.created_at,
+		        b.title, b.author, b.cover_path
+		 FROM loans l
+		 JOIN books b ON b.id = l.book_id
+		 WHERE l.id = ?`, id,
+	).Scan(
+		&l.ID, &l.BookID, &l.LoanType, &l.PersonName, &l.PersonContact,
+		&l.CheckedOut, &dueDate, &checkedIn, &l.Notes, &l.CreatedAt,
+		&bookTitle, &bookAuthor, &bookCoverPath,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if dueDate.Valid {
+		l.DueDate = &dueDate.Time
+	}
+	if checkedIn.Valid {
+		l.CheckedIn = &checkedIn.Time
+	}
+	l.Book = &models.Book{ID: l.BookID, Title: bookTitle, Author: bookAuthor, CoverPath: bookCoverPath}
+	computeOverdue(l)
+	return l, nil
+}
+
+// ListLoans retrieves loans with optional filtering and pagination.
+func (d *DB) ListLoans(p models.LoanListParams) (*models.LoanListResponse, error) {
+	var where []string
+	var args []interface{}
+
+	switch p.Status {
+	case "active":
+		where = append(where, "l.checked_in IS NULL")
+	case "returned":
+		where = append(where, "l.checked_in IS NOT NULL")
+	case "overdue":
+		where = append(where, "l.checked_in IS NULL AND l.due_date IS NOT NULL AND l.due_date < CURRENT_TIMESTAMP")
+	}
+	if p.LoanType != "" {
+		where = append(where, "l.loan_type = ?")
+		args = append(args, p.LoanType)
+	}
+	if p.PersonName != "" {
+		where = append(where, "l.person_name LIKE ?")
+		args = append(args, "%"+p.PersonName+"%")
+	}
+	if p.BookID > 0 {
+		where = append(where, "l.book_id = ?")
+		args = append(args, p.BookID)
+	}
+
+	whereClause := ""
+	if len(where) > 0 {
+		whereClause = "WHERE " + strings.Join(where, " AND ")
+	}
+
+	var total int
+	countQ := fmt.Sprintf("SELECT COUNT(*) FROM loans l %s", whereClause)
+	d.QueryRow(countQ, args...).Scan(&total)
+
+	limit := p.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	offset := p.Offset
+	if offset < 0 {
+		offset = 0
+	}
+
+	query := fmt.Sprintf(
+		`SELECT l.id, l.book_id, l.loan_type, l.person_name, l.person_contact,
+		        l.checked_out, l.due_date, l.checked_in, l.notes, l.created_at,
+		        b.title, b.author, b.cover_path
+		 FROM loans l
+		 JOIN books b ON b.id = l.book_id
+		 %s
+		 ORDER BY l.checked_out DESC
+		 LIMIT ? OFFSET ?`,
+		whereClause,
+	)
+	args = append(args, limit, offset)
+
+	rows, err := d.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var loans []models.Loan
+	for rows.Next() {
+		var l models.Loan
+		var dueDate, checkedIn sql.NullTime
+		var bookTitle, bookAuthor, bookCoverPath string
+		if err := rows.Scan(
+			&l.ID, &l.BookID, &l.LoanType, &l.PersonName, &l.PersonContact,
+			&l.CheckedOut, &dueDate, &checkedIn, &l.Notes, &l.CreatedAt,
+			&bookTitle, &bookAuthor, &bookCoverPath,
+		); err != nil {
+			return nil, err
+		}
+		if dueDate.Valid {
+			l.DueDate = &dueDate.Time
+		}
+		if checkedIn.Valid {
+			l.CheckedIn = &checkedIn.Time
+		}
+		l.Book = &models.Book{ID: l.BookID, Title: bookTitle, Author: bookAuthor, CoverPath: bookCoverPath}
+		computeOverdue(&l)
+		loans = append(loans, l)
+	}
+	if loans == nil {
+		loans = []models.Loan{}
+	}
+
+	return &models.LoanListResponse{
+		Loans:  loans,
+		Total:  total,
+		Limit:  limit,
+		Offset: offset,
+	}, nil
+}
+
+// CheckInLoan marks a loan as returned.
+func (d *DB) CheckInLoan(id int64, notes string) error {
+	query := `UPDATE loans SET checked_in = CURRENT_TIMESTAMP`
+	args := []interface{}{}
+	if notes != "" {
+		query += `, notes = COALESCE(notes || ' | ', '') || ?`
+		args = append(args, notes)
+	}
+	query += ` WHERE id = ? AND checked_in IS NULL`
+	args = append(args, id)
+
+	res, err := d.Exec(query, args...)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+// DeleteLoan removes a loan record.
+func (d *DB) DeleteLoan(id int64) error {
+	res, err := d.Exec("DELETE FROM loans WHERE id = ?", id)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+// GetBookLoans returns all loans for a specific book.
+func (d *DB) GetBookLoans(bookID int64) ([]models.Loan, error) {
+	rows, err := d.Query(
+		`SELECT l.id, l.book_id, l.loan_type, l.person_name, l.person_contact,
+		        l.checked_out, l.due_date, l.checked_in, l.notes, l.created_at
+		 FROM loans l
+		 WHERE l.book_id = ?
+		 ORDER BY l.checked_out DESC`, bookID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var loans []models.Loan
+	for rows.Next() {
+		var l models.Loan
+		var dueDate, checkedIn sql.NullTime
+		if err := rows.Scan(
+			&l.ID, &l.BookID, &l.LoanType, &l.PersonName, &l.PersonContact,
+			&l.CheckedOut, &dueDate, &checkedIn, &l.Notes, &l.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		if dueDate.Valid {
+			l.DueDate = &dueDate.Time
+		}
+		if checkedIn.Valid {
+			l.CheckedIn = &checkedIn.Time
+		}
+		computeOverdue(&l)
+		loans = append(loans, l)
+	}
+	if loans == nil {
+		loans = []models.Loan{}
+	}
+	return loans, nil
+}
+
+// GetActiveLoanForBook returns the current active loan for a book (if any).
+func (d *DB) GetActiveLoanForBook(bookID int64) (*models.Loan, error) {
+	l := &models.Loan{}
+	var dueDate sql.NullTime
+	err := d.QueryRow(
+		`SELECT id, book_id, loan_type, person_name, person_contact,
+		        checked_out, due_date, notes, created_at
+		 FROM loans
+		 WHERE book_id = ? AND checked_in IS NULL
+		 ORDER BY checked_out DESC LIMIT 1`, bookID,
+	).Scan(
+		&l.ID, &l.BookID, &l.LoanType, &l.PersonName, &l.PersonContact,
+		&l.CheckedOut, &dueDate, &l.Notes, &l.CreatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if dueDate.Valid {
+		l.DueDate = &dueDate.Time
+	}
+	computeOverdue(l)
+	return l, nil
+}
+
+// GetOverdueCount returns the number of overdue active loans.
+func (d *DB) GetOverdueCount() (int, error) {
+	var count int
+	err := d.QueryRow("SELECT COUNT(*) FROM loans WHERE checked_in IS NULL AND due_date IS NOT NULL AND due_date < CURRENT_TIMESTAMP").Scan(&count)
+	return count, err
+}
+
+// computeOverdue sets the IsOverdue and DaysOverdue fields on a loan.
+func computeOverdue(l *models.Loan) {
+	if l.CheckedIn != nil || l.DueDate == nil {
+		return
+	}
+	if time.Now().After(*l.DueDate) {
+		l.IsOverdue = true
+		l.DaysOverdue = int(time.Since(*l.DueDate).Hours() / 24)
+		if l.DaysOverdue < 1 {
+			l.DaysOverdue = 1
+		}
+	}
 }

@@ -52,3 +52,30 @@ window.addEventListener('online', function() {
 window.addEventListener('offline', function() {
     document.body.classList.add('offline');
 });
+
+// === More Menu Toggle (bottom nav) ===
+(function() {
+    var trigger = document.getElementById('moreToggle');
+    var menu = document.getElementById('moreMenu');
+    if (!trigger || !menu) return;
+
+    trigger.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        menu.classList.toggle('open');
+    });
+
+    // Close on outside click
+    document.addEventListener('click', function(e) {
+        if (!trigger.contains(e.target)) {
+            menu.classList.remove('open');
+        }
+    });
+
+    // Close on Escape
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            menu.classList.remove('open');
+        }
+    });
+})();

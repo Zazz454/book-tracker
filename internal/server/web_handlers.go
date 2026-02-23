@@ -1,27 +1,28 @@
 package server
 
 import (
+	"fmt"
 	"html/template"
 	"log"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/user/library/internal/models"
 	"github.com/user/library/internal/service"
 )
 
 type webHandlers struct {
-	lib     *service.Library
-	tmpl    *template.Template
-	dataDir string
+	lib       *service.Library
+	templates map[string]*template.Template
+	dataDir   string
 }
 
-func newWebHandlers(lib *service.Library, dataDir string) *webHandlers {
-	templatesDir := filepath.Join(dataDir, "..", "web", "templates")
-
-	funcMap := template.FuncMap{
+func templateFuncs() template.FuncMap {
+	return template.FuncMap{
 		"statusColor": func(s string) string {
 			switch s {
 			case "reading":
@@ -35,10 +36,7 @@ func newWebHandlers(lib *service.Library, dataDir string) *webHandlers {
 			}
 		},
 		"stars": func(n int) string {
-			filled := strings.Repeat("*", n)
-			empty := strings.Repeat("*", 5-n)
-			_ = empty
-			return filled
+			return strings.Repeat("*", n)
 		},
 		"ratingStars": func(n int) template.HTML {
 			var sb strings.Builder
@@ -72,11 +70,74 @@ func newWebHandlers(lib *service.Library, dataDir string) *webHandlers {
 			}
 			return s
 		},
+		"formatDate": func(t time.Time) string {
+			return t.Format("Jan 2, 2006")
+		},
+		"formatDatePtr": func(t *time.Time) string {
+			if t == nil {
+				return ""
+			}
+			return t.Format("Jan 2, 2006")
+		},
+		"amazonURL": func(title, author string) string {
+			q := url.QueryEscape(title + " " + author)
+			return "https://www.amazon.com/s?k=" + q + "&i=stripbooks"
+		},
+		"worldcatURL": func(title, author string) string {
+			q := url.QueryEscape(title + " " + author)
+			return "https://www.worldcat.org/search?q=" + q
+		},
+		"openlibrarySearchURL": func(title, author string) string {
+			q := url.QueryEscape(title + " " + author)
+			return "https://openlibrary.org/search?q=" + q
+		},
+		"loanTypeLabel": func(t string) string {
+			if t == "borrowed" {
+				return "Borrowed"
+			}
+			return "Lent"
+		},
+		"daysUntilDue": func(due *time.Time) int {
+			if due == nil {
+				return 0
+			}
+			return int(time.Until(*due).Hours() / 24)
+		},
+	}
+}
+
+func newWebHandlers(lib *service.Library, dataDir string) *webHandlers {
+	templatesDir := filepath.Join(dataDir, "..", "web", "templates")
+	layoutFile := filepath.Join(templatesDir, "layout.html")
+
+	// Parse each page template individually with the layout so that
+	// block definitions (content, title, scripts) don't collide.
+	pages := []string{
+		"index.html",
+		"books.html",
+		"book_detail.html",
+		"book_form.html",
+		"shelves.html",
+		"shelf_detail.html",
+		"stats.html",
+		"scan.html",
+		"loans.html",
+		"loan_form.html",
 	}
 
-	tmpl := template.Must(template.New("").Funcs(funcMap).ParseGlob(filepath.Join(templatesDir, "*.html")))
+	templates := make(map[string]*template.Template)
+	for _, page := range pages {
+		t, err := template.New(page).Funcs(templateFuncs()).ParseFiles(
+			layoutFile,
+			filepath.Join(templatesDir, page),
+		)
+		if err != nil {
+			log.Fatalf("Failed to parse template %s: %v", page, err)
+		}
+		templates[page] = t
+	}
 
-	return &webHandlers{lib: lib, tmpl: tmpl, dataDir: dataDir}
+	return &webHandlers{lib: lib, templates: templates, dataDir: dataDir}
 }
 
 func (h *webHandlers) registerRoutes(mux *http.ServeMux) {
@@ -91,6 +152,8 @@ func (h *webHandlers) registerRoutes(mux *http.ServeMux) {
 		}
 		h.bookDetail(w, r)
 	})
+	mux.HandleFunc("/loans", h.loanList)
+	mux.HandleFunc("/loans/new", h.loanForm)
 	mux.HandleFunc("/shelves", h.shelfList)
 	mux.HandleFunc("/shelves/", h.shelfDetail)
 	mux.HandleFunc("/stats", h.statsPage)
@@ -98,10 +161,25 @@ func (h *webHandlers) registerRoutes(mux *http.ServeMux) {
 }
 
 func (h *webHandlers) render(w http.ResponseWriter, name string, data interface{}) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := h.tmpl.ExecuteTemplate(w, name, data); err != nil {
-		log.Printf("template error: %v", err)
+	t, ok := h.templates[name]
+	if !ok {
+		log.Printf("template %q not found", name)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := t.ExecuteTemplate(w, "layout", data); err != nil {
+		log.Printf("template error (%s): %v", name, err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
+}
+
+// baseData returns a map with common template data including OverdueCount for nav badges.
+func (h *webHandlers) baseData(page string) map[string]interface{} {
+	overdueCount, _ := h.lib.GetOverdueCount()
+	return map[string]interface{}{
+		"Page":         page,
+		"OverdueCount": overdueCount,
 	}
 }
 
@@ -116,13 +194,17 @@ func (h *webHandlers) dashboard(w http.ResponseWriter, r *http.Request) {
 	stats, _ := h.lib.GetStats()
 	recent, _ := h.lib.ListBooks(models.BookListParams{Sort: "created_at", Order: "desc", Limit: 8})
 	reading, _ := h.lib.ListBooks(models.BookListParams{Status: "reading", Limit: 8})
-
-	data := map[string]interface{}{
-		"Page":     "home",
-		"Stats":    stats,
-		"Recent":   recent,
-		"Reading":  reading,
+	overdueResp, _ := h.lib.GetOverdueLoans()
+	var overdueLoans []models.Loan
+	if overdueResp != nil {
+		overdueLoans = overdueResp.Loans
 	}
+
+	data := h.baseData("home")
+	data["Stats"] = stats
+	data["Recent"] = recent
+	data["Reading"] = reading
+	data["OverdueLoans"] = overdueLoans
 	h.render(w, "index.html", data)
 }
 
@@ -161,13 +243,11 @@ func (h *webHandlers) bookList(w http.ResponseWriter, r *http.Request) {
 
 	shelves, _ := h.lib.ListShelves()
 
-	data := map[string]interface{}{
-		"Page":    "books",
-		"Books":   result,
-		"Params":  params,
-		"Shelves": shelves,
-		"View":    q.Get("view"),
-	}
+	data := h.baseData("books")
+	data["Books"] = result
+	data["Params"] = params
+	data["Shelves"] = shelves
+	data["View"] = q.Get("view")
 	h.render(w, "books.html", data)
 }
 
@@ -186,22 +266,20 @@ func (h *webHandlers) bookDetail(w http.ResponseWriter, r *http.Request) {
 
 	shelves, _ := h.lib.ListShelves()
 	tags, _ := h.lib.ListTags()
+	loanHistory, _ := h.lib.GetBookLoanHistory(id)
 
-	data := map[string]interface{}{
-		"Page":       "books",
-		"Book":       book,
-		"AllShelves": shelves,
-		"AllTags":    tags,
-	}
+	data := h.baseData("books")
+	data["Book"] = book
+	data["AllShelves"] = shelves
+	data["AllTags"] = tags
+	data["LoanHistory"] = loanHistory
 	h.render(w, "book_detail.html", data)
 }
 
 func (h *webHandlers) bookForm(w http.ResponseWriter, r *http.Request) {
-	data := map[string]interface{}{
-		"Page":   "books",
-		"Book":   &models.Book{Status: "unread"},
-		"IsNew":  true,
-	}
+	data := h.baseData("books")
+	data["Book"] = &models.Book{Status: "unread"}
+	data["IsNew"] = true
 	h.render(w, "book_form.html", data)
 }
 
@@ -218,11 +296,9 @@ func (h *webHandlers) bookEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data := map[string]interface{}{
-		"Page":  "books",
-		"Book":  book,
-		"IsNew": false,
-	}
+	data := h.baseData("books")
+	data["Book"] = book
+	data["IsNew"] = false
 	h.render(w, "book_form.html", data)
 }
 
@@ -233,10 +309,8 @@ func (h *webHandlers) shelfList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data := map[string]interface{}{
-		"Page":    "shelves",
-		"Shelves": shelves,
-	}
+	data := h.baseData("shelves")
+	data["Shelves"] = shelves
 	h.render(w, "shelves.html", data)
 }
 
@@ -255,11 +329,9 @@ func (h *webHandlers) shelfDetail(w http.ResponseWriter, r *http.Request) {
 
 	books, _ := h.lib.GetShelfBooks(id)
 
-	data := map[string]interface{}{
-		"Page":  "shelves",
-		"Shelf": shelf,
-		"Books": books,
-	}
+	data := h.baseData("shelves")
+	data["Shelf"] = shelf
+	data["Books"] = books
 	h.render(w, "shelf_detail.html", data)
 }
 
@@ -270,16 +342,78 @@ func (h *webHandlers) statsPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data := map[string]interface{}{
-		"Page":  "stats",
-		"Stats": stats,
-	}
+	data := h.baseData("stats")
+	data["Stats"] = stats
 	h.render(w, "stats.html", data)
 }
 
 func (h *webHandlers) scanPage(w http.ResponseWriter, r *http.Request) {
-	data := map[string]interface{}{
-		"Page": "scan",
-	}
+	data := h.baseData("scan")
 	h.render(w, "scan.html", data)
 }
+
+func (h *webHandlers) loanList(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	status := q.Get("status")
+	if status == "" {
+		status = "active"
+	}
+	params := models.LoanListParams{
+		Status:   status,
+		LoanType: q.Get("type"),
+		Limit:    50,
+	}
+	if person := q.Get("person"); person != "" {
+		params.PersonName = person
+	}
+
+	result, err := h.lib.ListLoans(params)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	data := h.baseData("loans")
+	data["Loans"] = result
+	data["Status"] = status
+	data["Type"] = q.Get("type")
+	h.render(w, "loans.html", data)
+}
+
+func (h *webHandlers) loanForm(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	bookIDStr := q.Get("book_id")
+	loanType := q.Get("type")
+	if loanType == "" {
+		loanType = "lent"
+	}
+
+	data := h.baseData("loans")
+	data["LoanType"] = loanType
+
+	if bookIDStr != "" {
+		bookID, err := strconv.ParseInt(bookIDStr, 10, 64)
+		if err == nil {
+			book, err := h.lib.GetBook(bookID)
+			if err == nil {
+				data["Book"] = book
+			}
+		}
+	}
+
+	// Provide a default due date 2 weeks from now
+	data["DefaultDueDate"] = time.Now().AddDate(0, 0, 14).Format("2006-01-02")
+
+	// List of books for the select dropdown (if no book pre-selected)
+	if bookIDStr == "" {
+		books, _ := h.lib.ListBooks(models.BookListParams{Limit: 500, Sort: "title", Order: "asc"})
+		if books != nil {
+			data["AllBooks"] = books.Books
+		}
+	}
+
+	h.render(w, "loan_form.html", data)
+}
+
+// Ensure fmt is used
+var _ = fmt.Sprintf

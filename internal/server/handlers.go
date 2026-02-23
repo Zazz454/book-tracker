@@ -521,3 +521,107 @@ func (h *apiHandlers) lookupISBN(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, result)
 }
+
+// --- Loan handlers ---
+
+func (h *apiHandlers) listLoans(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	params := models.LoanListParams{
+		Status:     q.Get("status"),
+		LoanType:   q.Get("loan_type"),
+		PersonName: q.Get("person"),
+	}
+	if bid := q.Get("book_id"); bid != "" {
+		params.BookID, _ = strconv.ParseInt(bid, 10, 64)
+	}
+	if lim := q.Get("limit"); lim != "" {
+		params.Limit, _ = strconv.Atoi(lim)
+	}
+	if off := q.Get("offset"); off != "" {
+		params.Offset, _ = strconv.Atoi(off)
+	}
+
+	result, err := h.lib.ListLoans(params)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (h *apiHandlers) createLoan(w http.ResponseWriter, r *http.Request) {
+	var req models.CreateLoanRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		return
+	}
+
+	loan, err := h.lib.CheckOut(&req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, loan)
+}
+
+func (h *apiHandlers) getLoan(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r.URL.Path)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	loan, err := h.lib.GetLoan(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "loan not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, loan)
+}
+
+func (h *apiHandlers) checkInLoan(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r.URL.Path)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	var req models.CheckInRequest
+	json.NewDecoder(r.Body).Decode(&req) // optional body
+
+	loan, err := h.lib.CheckIn(id, req.Notes)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, loan)
+}
+
+func (h *apiHandlers) deleteLoan(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r.URL.Path)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if err := h.lib.DeleteLoan(id); err != nil {
+		writeError(w, http.StatusNotFound, "loan not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+func (h *apiHandlers) getBookLoans(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r.URL.Path)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	loans, err := h.lib.GetBookLoanHistory(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, loans)
+}

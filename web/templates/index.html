@@ -1,5 +1,3 @@
-{{template "layout" .}}
-
 {{define "title"}}My Library{{end}}
 
 {{define "content"}}
@@ -26,6 +24,35 @@
         <div class="stat-card">
             <span class="stat-number">{{.Stats.TotalPages}}</span>
             <span class="stat-label">Pages Read</span>
+        </div>
+    </section>
+    {{end}}
+
+    {{if and .OverdueLoans (gt (len .OverdueLoans) 0)}}
+    <section class="dash-section overdue-section">
+        <div class="section-header">
+            <h2>Overdue Loans</h2>
+            <a href="/loans?status=overdue" class="link">View all</a>
+        </div>
+        <div class="overdue-list">
+            {{range .OverdueLoans}}
+            <div class="overdue-card">
+                <div class="overdue-info">
+                    {{if .Book}}
+                    <a href="/books/{{.Book.ID}}" class="overdue-title">{{.Book.Title}}</a>
+                    {{end}}
+                    <span class="overdue-person">
+                        {{if eq .LoanType "lent"}}Lent to{{else}}Borrowed from{{end}} <strong>{{.PersonName}}</strong>
+                    </span>
+                    {{if .DueDate}}
+                    <span class="overdue-due">Due: {{formatDatePtr .DueDate}} ({{.DaysOverdue}} days overdue)</span>
+                    {{end}}
+                </div>
+                <div class="overdue-actions">
+                    <button class="btn btn-sm btn-primary" onclick="checkInLoan({{.ID}})">Return</button>
+                </div>
+            </div>
+            {{end}}
         </div>
     </section>
     {{end}}
@@ -95,4 +122,17 @@
     </section>
     {{end}}
 </div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+async function checkInLoan(id) {
+    await fetch('/api/loans/' + id, {
+        method: 'PATCH',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({})
+    });
+    location.reload();
+}
+</script>
 {{end}}

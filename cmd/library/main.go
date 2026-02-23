@@ -48,6 +48,9 @@ func main() {
 	root.AddCommand(importCmd())
 	root.AddCommand(exportCmd())
 	root.AddCommand(lookupCmd())
+	root.AddCommand(checkoutCmd())
+	root.AddCommand(checkinCmd())
+	root.AddCommand(loansCmd())
 
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
@@ -809,4 +812,162 @@ func lookupCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func checkoutCmd() *cobra.Command {
+	var person, contact, dueDate, notes, loanType string
+	cmd := &cobra.Command{
+		Use:   "checkout [book-id]",
+		Short: "Lend or borrow a book (create a loan)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			bookID, err := strconv.ParseInt(args[0], 10, 64)
+			if err != nil {
+				return fmt.Errorf("invalid book ID: %s", args[0])
+			}
+			if person == "" {
+				return fmt.Errorf("--person is required")
+			}
+
+			req := models.CreateLoanRequest{
+				BookID:        bookID,
+				LoanType:      loanType,
+				PersonName:    person,
+				PersonContact: contact,
+				DueDate:       dueDate,
+				Notes:         notes,
+			}
+
+			data, err := doJSON("POST", "/api/loans", req)
+			if err != nil {
+				return err
+			}
+			if jsonOut {
+				printJSON(data)
+				return nil
+			}
+
+			var loan models.Loan
+			json.Unmarshal(data, &loan)
+			action := "Lent"
+			if loanType == "borrowed" {
+				action = "Borrowed"
+			}
+			fmt.Printf("%s book #%s to/from %s (loan #%d)\n", action, args[0], person, loan.ID)
+			if dueDate != "" {
+				fmt.Printf("Due: %s\n", dueDate)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&person, "person", "", "Person's name (required)")
+	cmd.Flags().StringVar(&contact, "contact", "", "Contact info (email, phone)")
+	cmd.Flags().StringVar(&dueDate, "due", "", "Due date (YYYY-MM-DD)")
+	cmd.Flags().StringVar(&notes, "notes", "", "Notes")
+	cmd.Flags().StringVar(&loanType, "type", "lent", "Loan type: lent or borrowed")
+	return cmd
+}
+
+func checkinCmd() *cobra.Command {
+	var notes string
+	cmd := &cobra.Command{
+		Use:   "checkin [loan-id]",
+		Short: "Return a book (check in a loan)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var body interface{}
+			if notes != "" {
+				body = models.CheckInRequest{Notes: notes}
+			} else {
+				body = map[string]string{}
+			}
+
+			data, err := doJSON("PATCH", "/api/loans/"+args[0], body)
+			if err != nil {
+				return err
+			}
+			if jsonOut {
+				printJSON(data)
+				return nil
+			}
+
+			var loan models.Loan
+			json.Unmarshal(data, &loan)
+			fmt.Printf("Loan #%s checked in. Book returned.\n", args[0])
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&notes, "notes", "", "Return notes")
+	return cmd
+}
+
+func loansCmd() *cobra.Command {
+	var status, loanType, person string
+	cmd := &cobra.Command{
+		Use:   "loans",
+		Short: "List loans",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			params := url.Values{}
+			if status != "" {
+				params.Set("status", status)
+			} else {
+				params.Set("status", "active")
+			}
+			if loanType != "" {
+				params.Set("loan_type", loanType)
+			}
+			if person != "" {
+				params.Set("person", person)
+			}
+			params.Set("limit", "100")
+			path := "/api/loans?" + params.Encode()
+
+			data, err := doJSON("GET", path, nil)
+			if err != nil {
+				return err
+			}
+			if jsonOut {
+				printJSON(data)
+				return nil
+			}
+
+			var resp models.LoanListResponse
+			json.Unmarshal(data, &resp)
+			if len(resp.Loans) == 0 {
+				fmt.Println("No loans found.")
+				return nil
+			}
+
+			tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			fmt.Fprintf(tw, "ID\tBOOK\tTYPE\tPERSON\tCHECKED OUT\tDUE\tSTATUS\n")
+			for _, l := range resp.Loans {
+				bookTitle := ""
+				if l.Book != nil {
+					bookTitle = l.Book.Title
+					if len(bookTitle) > 30 {
+						bookTitle = bookTitle[:27] + "..."
+					}
+				}
+				due := "-"
+				if l.DueDate != nil {
+					due = l.DueDate.Format("2006-01-02")
+				}
+				lStatus := "Active"
+				if l.CheckedIn != nil {
+					lStatus = "Returned"
+				} else if l.IsOverdue {
+					lStatus = fmt.Sprintf("OVERDUE (%dd)", l.DaysOverdue)
+				}
+				fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\t%s\t%s\n",
+					l.ID, bookTitle, l.LoanType, l.PersonName,
+					l.CheckedOut.Format("2006-01-02"), due, lStatus)
+			}
+			tw.Flush()
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&status, "status", "", "Filter: active, returned, overdue (default: active)")
+	cmd.Flags().StringVar(&loanType, "type", "", "Filter: lent, borrowed")
+	cmd.Flags().StringVar(&person, "person", "", "Filter by person name")
+	return cmd
 }

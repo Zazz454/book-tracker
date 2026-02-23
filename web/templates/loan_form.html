@@ -1,0 +1,93 @@
+{{define "title"}}{{if eq .LoanType "borrowed"}}Borrow a Book{{else}}Lend a Book{{end}} - My Library{{end}}
+
+{{define "content"}}
+<div class="book-form-page">
+    <div class="page-header">
+        <h1>{{if eq .LoanType "borrowed"}}Borrow a Book{{else}}Lend a Book{{end}}</h1>
+        <a href="/loans" class="btn btn-sm">Cancel</a>
+    </div>
+
+    <form class="book-form" id="loanForm" onsubmit="submitLoan(event)">
+        {{if .Book}}
+        <input type="hidden" name="book_id" value="{{.Book.ID}}">
+        <div class="form-group">
+            <label>Book</label>
+            <div class="selected-book-card">
+                <strong>{{.Book.Title}}</strong> by {{.Book.Author}}
+            </div>
+        </div>
+        {{else}}
+        <div class="form-group">
+            <label for="book_id">Book</label>
+            <select name="book_id" id="book_id" class="form-input" required>
+                <option value="">Select a book...</option>
+                {{range .AllBooks}}
+                <option value="{{.ID}}">{{.Title}} - {{.Author}}</option>
+                {{end}}
+            </select>
+        </div>
+        {{end}}
+
+        <input type="hidden" name="loan_type" value="{{.LoanType}}">
+
+        <div class="form-group">
+            <label for="person_name">{{if eq .LoanType "borrowed"}}Borrowed From{{else}}Lent To{{end}}</label>
+            <input type="text" name="person_name" id="person_name" class="form-input" placeholder="Person's name" required>
+        </div>
+
+        <div class="form-group">
+            <label for="person_contact">Contact (optional)</label>
+            <input type="text" name="person_contact" id="person_contact" class="form-input" placeholder="Email, phone, etc.">
+        </div>
+
+        <div class="form-group">
+            <label for="due_date">Due Date (optional)</label>
+            <input type="date" name="due_date" id="due_date" class="form-input" value="{{.DefaultDueDate}}">
+        </div>
+
+        <div class="form-group">
+            <label for="notes">Notes (optional)</label>
+            <textarea name="notes" id="notes" class="form-input" rows="3" placeholder="Any notes about this loan..."></textarea>
+        </div>
+
+        <div class="form-actions">
+            <a href="/loans" class="btn">Cancel</a>
+            <button type="submit" class="btn btn-primary">{{if eq .LoanType "borrowed"}}Record Borrow{{else}}Lend Book{{end}}</button>
+        </div>
+    </form>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+async function submitLoan(e) {
+    e.preventDefault();
+    var form = document.getElementById('loanForm');
+    var fd = new FormData(form);
+    var data = {
+        book_id: parseInt(fd.get('book_id')),
+        loan_type: fd.get('loan_type'),
+        person_name: fd.get('person_name'),
+        person_contact: fd.get('person_contact') || '',
+        due_date: fd.get('due_date') || '',
+        notes: fd.get('notes') || ''
+    };
+
+    try {
+        var resp = await fetch('/api/loans', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        });
+        if (!resp.ok) {
+            var err = await resp.json();
+            alert(err.error || 'Failed to create loan');
+            return;
+        }
+        window.location = '/loans';
+    } catch(err) {
+        alert('Error: ' + err.message);
+    }
+}
+</script>
+{{end}}

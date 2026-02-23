@@ -19,6 +19,12 @@ const (
 	CoverSourceManual      = "manual"
 )
 
+// Loan type constants
+const (
+	LoanTypeLent     = "lent"
+	LoanTypeBorrowed = "borrowed"
+)
+
 // Book represents a book in the library.
 type Book struct {
 	ID          int64      `json:"id"`
@@ -38,8 +44,9 @@ type Book struct {
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
 	// Joined data (not always populated)
-	Shelves []Shelf `json:"shelves,omitempty"`
-	Tags    []Tag   `json:"tags,omitempty"`
+	Shelves    []Shelf `json:"shelves,omitempty"`
+	Tags       []Tag   `json:"tags,omitempty"`
+	ActiveLoan *Loan   `json:"active_loan,omitempty"`
 }
 
 // Shelf represents a user-defined collection of books.
@@ -160,6 +167,8 @@ type StatsResponse struct {
 	ReadingStreak  int              `json:"reading_streak"`
 	LongestBook    *Book            `json:"longest_book,omitempty"`
 	ShortestBook   *Book            `json:"shortest_book,omitempty"`
+	OverdueCount   int              `json:"overdue_count"`
+	ActiveLoans    int              `json:"active_loans"`
 }
 
 // MonthCount is a count of books for a given month.
@@ -204,4 +213,56 @@ type ImportResult struct {
 	Imported int      `json:"imported"`
 	Skipped  int      `json:"skipped"`
 	Errors   []string `json:"errors,omitempty"`
+}
+
+// --- Loan types ---
+
+// Loan represents a lending or borrowing record.
+type Loan struct {
+	ID            int64      `json:"id"`
+	BookID        int64      `json:"book_id"`
+	Book          *Book      `json:"book,omitempty"`
+	LoanType      string     `json:"loan_type"`
+	PersonName    string     `json:"person_name"`
+	PersonContact string     `json:"person_contact,omitempty"`
+	CheckedOut    time.Time  `json:"checked_out"`
+	DueDate       *time.Time `json:"due_date,omitempty"`
+	CheckedIn     *time.Time `json:"checked_in,omitempty"`
+	Notes         string     `json:"notes,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	IsOverdue     bool       `json:"is_overdue,omitempty"`
+	DaysOverdue   int        `json:"days_overdue,omitempty"`
+}
+
+// CreateLoanRequest is the payload for creating a loan (check out or borrow).
+type CreateLoanRequest struct {
+	BookID        int64  `json:"book_id"`
+	LoanType      string `json:"loan_type"`
+	PersonName    string `json:"person_name"`
+	PersonContact string `json:"person_contact,omitempty"`
+	DueDate       string `json:"due_date,omitempty"` // YYYY-MM-DD
+	Notes         string `json:"notes,omitempty"`
+}
+
+// CheckInRequest is the payload for checking in (returning) a book.
+type CheckInRequest struct {
+	Notes string `json:"notes,omitempty"`
+}
+
+// LoanListParams controls filtering and pagination of loan lists.
+type LoanListParams struct {
+	Status     string `json:"status,omitempty"`    // active, returned, overdue
+	LoanType   string `json:"loan_type,omitempty"` // lent, borrowed
+	PersonName string `json:"person,omitempty"`
+	BookID     int64  `json:"book_id,omitempty"`
+	Limit      int    `json:"limit,omitempty"`
+	Offset     int    `json:"offset,omitempty"`
+}
+
+// LoanListResponse wraps a list of loans with pagination info.
+type LoanListResponse struct {
+	Loans  []Loan `json:"loans"`
+	Total  int    `json:"total"`
+	Limit  int    `json:"limit"`
+	Offset int    `json:"offset"`
 }

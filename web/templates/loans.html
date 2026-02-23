@@ -1,0 +1,83 @@
+{{define "title"}}Loans - My Library{{end}}
+
+{{define "content"}}
+<div class="loans-page">
+    <div class="page-header">
+        <h1>Loans</h1>
+        <div class="loan-header-actions">
+            <a href="/loans/new?type=lent" class="btn btn-primary">+ Lend Book</a>
+            <a href="/loans/new?type=borrowed" class="btn">+ Borrow Book</a>
+        </div>
+    </div>
+
+    <div class="loan-tabs">
+        <a href="/loans?status=active" class="loan-tab {{if eq .Status "active"}}active{{end}}">Active</a>
+        <a href="/loans?status=overdue" class="loan-tab {{if eq .Status "overdue"}}active{{end}}">
+            Overdue{{if and .OverdueCount (gt .OverdueCount 0)}} <span class="tab-badge">{{.OverdueCount}}</span>{{end}}
+        </a>
+        <a href="/loans?status=returned" class="loan-tab {{if eq .Status "returned"}}active{{end}}">Returned</a>
+    </div>
+
+    {{if and .Loans (gt (len .Loans.Loans) 0)}}
+    <div class="loan-list">
+        {{range .Loans.Loans}}
+        <div class="loan-card {{if .IsOverdue}}loan-overdue{{end}}">
+            <div class="loan-card-left">
+                {{if .Book}}
+                <a href="/books/{{.Book.ID}}" class="loan-book-title">{{.Book.Title}}</a>
+                <span class="loan-book-author">{{.Book.Author}}</span>
+                {{end}}
+            </div>
+            <div class="loan-card-center">
+                <span class="loan-type-badge {{.LoanType}}">{{loanTypeLabel .LoanType}}</span>
+                <span class="loan-person">{{.PersonName}}</span>
+                {{if .PersonContact}}<span class="loan-contact">{{.PersonContact}}</span>{{end}}
+            </div>
+            <div class="loan-card-right">
+                <span class="loan-date">{{formatDate .CheckedOut}}</span>
+                {{if .DueDate}}
+                <span class="loan-due {{if .IsOverdue}}overdue-text{{end}}">
+                    Due: {{formatDatePtr .DueDate}}
+                    {{if .IsOverdue}} ({{.DaysOverdue}}d late){{end}}
+                </span>
+                {{end}}
+                {{if .CheckedIn}}
+                <span class="loan-returned">Returned: {{formatDatePtr .CheckedIn}}</span>
+                {{end}}
+            </div>
+            <div class="loan-card-actions">
+                {{if not .CheckedIn}}
+                <button class="btn btn-sm btn-primary" onclick="checkInLoan({{.ID}})">Return</button>
+                {{end}}
+                <button class="btn btn-sm btn-danger" onclick="deleteLoan({{.ID}})">Delete</button>
+            </div>
+        </div>
+        {{end}}
+    </div>
+    {{else}}
+    <div class="empty-state">
+        <h2>No {{.Status}} loans</h2>
+        <p>Use the buttons above to lend or borrow a book.</p>
+    </div>
+    {{end}}
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+async function checkInLoan(id) {
+    await fetch('/api/loans/' + id, {
+        method: 'PATCH',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({})
+    });
+    location.reload();
+}
+
+async function deleteLoan(id) {
+    if (!confirm('Delete this loan record?')) return;
+    await fetch('/api/loans/' + id, {method: 'DELETE'});
+    location.reload();
+}
+</script>
+{{end}}

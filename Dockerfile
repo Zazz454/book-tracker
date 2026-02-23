@@ -1,10 +1,7 @@
 # Build stage
-FROM golang:1.22-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 WORKDIR /app
-
-# Install required packages for CGO (in case we switch back to go-sqlite3)
-RUN apk add --no-cache gcc musl-dev sqlite-dev
 
 # Copy go mod files
 COPY go.mod go.sum ./
@@ -13,7 +10,7 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the server binary
+# Build the server binary (pure Go, no CGO needed)
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o library-server ./cmd/server
 
 # Build the CLI binary

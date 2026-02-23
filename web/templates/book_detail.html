@@ -1,5 +1,3 @@
-{{template "layout" .}}
-
 {{define "title"}}{{.Book.Title}} - My Library{{end}}
 
 {{define "content"}}
@@ -64,6 +62,41 @@
                 {{if .Book.FinishedAt}}<div class="field"><span class="field-label">Finished</span><span>{{.Book.FinishedAt.Format "Jan 2, 2006"}}</span></div>{{end}}
             </div>
 
+            {{/* Loan Status Section */}}
+            <div class="detail-loan-status">
+                {{if .Book.ActiveLoan}}
+                <div class="loan-active-card">
+                    <h3>{{if eq .Book.ActiveLoan.LoanType "lent"}}On Loan{{else}}Borrowed{{end}}</h3>
+                    <div class="loan-active-info">
+                        <span>{{if eq .Book.ActiveLoan.LoanType "lent"}}Lent to{{else}}Borrowed from{{end}} <strong>{{.Book.ActiveLoan.PersonName}}</strong></span>
+                        <span>Since: {{formatDate .Book.ActiveLoan.CheckedOut}}</span>
+                        {{if .Book.ActiveLoan.DueDate}}
+                        <span class="{{if .Book.ActiveLoan.IsOverdue}}overdue-text{{end}}">
+                            Due: {{formatDatePtr .Book.ActiveLoan.DueDate}}
+                            {{if .Book.ActiveLoan.IsOverdue}} ({{.Book.ActiveLoan.DaysOverdue}} days overdue){{end}}
+                        </span>
+                        {{end}}
+                    </div>
+                    <button class="btn btn-sm btn-primary" onclick="checkInLoan({{.Book.ActiveLoan.ID}})">Return Book</button>
+                </div>
+                {{else}}
+                <div class="loan-action-buttons">
+                    <a href="/loans/new?book_id={{.Book.ID}}&type=lent" class="btn btn-sm">Lend This Book</a>
+                    <a href="/loans/new?book_id={{.Book.ID}}&type=borrowed" class="btn btn-sm">Mark as Borrowed</a>
+                </div>
+                {{end}}
+            </div>
+
+            {{/* External Links */}}
+            <div class="external-links">
+                <h3>Find Online</h3>
+                <div class="external-links-list">
+                    <a href="{{amazonURL .Book.Title .Book.Author}}" target="_blank" rel="noopener" class="external-link-btn amazon">Amazon</a>
+                    <a href="{{worldcatURL .Book.Title .Book.Author}}" target="_blank" rel="noopener" class="external-link-btn worldcat">WorldCat</a>
+                    <a href="{{openlibrarySearchURL .Book.Title .Book.Author}}" target="_blank" rel="noopener" class="external-link-btn openlibrary">Open Library</a>
+                </div>
+            </div>
+
             {{if .Book.Notes}}
             <div class="detail-notes">
                 <h3>Notes</h3>
@@ -102,6 +135,39 @@
                     </form>
                 </div>
             </div>
+
+            {{/* Loan History */}}
+            {{if .LoanHistory}}
+            <div class="detail-loan-history">
+                <h3>Loan History</h3>
+                <table class="loan-history-table">
+                    <thead>
+                        <tr>
+                            <th>Type</th>
+                            <th>Person</th>
+                            <th>Checked Out</th>
+                            <th>Returned</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{range .LoanHistory}}
+                        <tr class="{{if and (not .CheckedIn) .IsOverdue}}overdue-row{{end}}">
+                            <td>{{loanTypeLabel .LoanType}}</td>
+                            <td>{{.PersonName}}</td>
+                            <td>{{formatDate .CheckedOut}}</td>
+                            <td>
+                                {{if .CheckedIn}}
+                                {{formatDatePtr .CheckedIn}}
+                                {{else}}
+                                <span class="active-badge">Active</span>
+                                {{end}}
+                            </td>
+                        </tr>
+                        {{end}}
+                    </tbody>
+                </table>
+            </div>
+            {{end}}
         </div>
     </div>
 </div>
@@ -110,40 +176,40 @@
 {{define "scripts"}}
 <script>
 async function setStatus(id, status) {
-    await fetch(`/api/books/${id}/status`, {
+    await fetch('/api/books/' + id + '/status', {
         method: 'PATCH',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({status})
+        body: JSON.stringify({status: status})
     });
     location.reload();
 }
 
 async function setRating(id, rating) {
-    await fetch(`/api/books/${id}/rating`, {
+    await fetch('/api/books/' + id + '/rating', {
         method: 'PATCH',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({rating})
+        body: JSON.stringify({rating: rating})
     });
     location.reload();
 }
 
 async function deleteBook(id) {
     if (!confirm('Delete this book?')) return;
-    await fetch(`/api/books/${id}`, {method: 'DELETE'});
+    await fetch('/api/books/' + id, {method: 'DELETE'});
     window.location = '/books';
 }
 
 async function refreshCover(id) {
-    const btn = event.target;
+    var btn = event.target;
     btn.textContent = 'Fetching...';
     btn.disabled = true;
-    await fetch(`/api/books/${id}/cover/refresh`, {method: 'POST'});
-    setTimeout(() => location.reload(), 2000);
+    await fetch('/api/books/' + id + '/cover/refresh', {method: 'POST'});
+    setTimeout(function() { location.reload(); }, 2000);
 }
 
 async function addToShelf(bookId, shelfId) {
     if (!shelfId) return;
-    await fetch(`/api/shelves/${shelfId}/books`, {
+    await fetch('/api/shelves/' + shelfId + '/books', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({book_id: bookId})
@@ -152,19 +218,28 @@ async function addToShelf(bookId, shelfId) {
 }
 
 async function removeTag(bookId, tagId) {
-    await fetch(`/api/books/${bookId}/tags/${tagId}`, {method: 'DELETE'});
+    await fetch('/api/books/' + bookId + '/tags/' + tagId, {method: 'DELETE'});
     location.reload();
 }
 
 async function addTag(e, bookId) {
     e.preventDefault();
-    const input = document.getElementById('newTagInput');
-    const name = input.value.trim();
+    var input = document.getElementById('newTagInput');
+    var name = input.value.trim();
     if (!name) return;
-    await fetch(`/api/books/${bookId}/tags`, {
+    await fetch('/api/books/' + bookId + '/tags', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({name})
+        body: JSON.stringify({name: name})
+    });
+    location.reload();
+}
+
+async function checkInLoan(id) {
+    await fetch('/api/loans/' + id, {
+        method: 'PATCH',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({})
     });
     location.reload();
 }
