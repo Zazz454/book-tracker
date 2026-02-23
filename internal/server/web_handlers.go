@@ -124,6 +124,10 @@ func newWebHandlers(lib *service.Library, dataDir string) *webHandlers {
 		"loans.html",
 		"loan_form.html",
 		"offline.html",
+		"login.html",
+		"register.html",
+		"account.html",
+		"admin_users.html",
 	}
 
 	templates := make(map[string]*template.Template)
@@ -160,6 +164,10 @@ func (h *webHandlers) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/shelves/", h.shelfDetail)
 	mux.HandleFunc("/stats", h.statsPage)
 	mux.HandleFunc("/scan", h.scanPage)
+	mux.HandleFunc("/login", h.loginPage)
+	mux.HandleFunc("/register", h.registerPage)
+	mux.HandleFunc("/account", h.accountPage)
+	mux.HandleFunc("/admin/users", h.adminUsersPage)
 }
 
 func (h *webHandlers) render(w http.ResponseWriter, name string, data interface{}) {
@@ -176,13 +184,87 @@ func (h *webHandlers) render(w http.ResponseWriter, name string, data interface{
 	}
 }
 
-// baseData returns a map with common template data including OverdueCount for nav badges.
-func (h *webHandlers) baseData(page string) map[string]interface{} {
+// baseData returns a map with common template data including OverdueCount for nav badges
+// and the currently authenticated user.
+func (h *webHandlers) baseData(r *http.Request, page string) map[string]interface{} {
 	overdueCount, _ := h.lib.GetOverdueCount()
-	return map[string]interface{}{
+	data := map[string]interface{}{
 		"Page":         page,
 		"OverdueCount": overdueCount,
 	}
+	if user := UserFromContext(r); user != nil {
+		data["User"] = user
+	}
+	return data
+}
+
+// --- Auth page handlers ---
+
+func (h *webHandlers) loginPage(w http.ResponseWriter, r *http.Request) {
+	// If already logged in, redirect to home
+	if user := UserFromContext(r); user != nil {
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
+
+	data := map[string]interface{}{
+		"Page":  "login",
+		"Error": r.URL.Query().Get("error"),
+	}
+
+	// Check if any users exist - if not, redirect to register
+	count, _ := h.lib.CountUsers()
+	if count == 0 {
+		http.Redirect(w, r, "/register", http.StatusFound)
+		return
+	}
+
+	h.render(w, "login.html", data)
+}
+
+func (h *webHandlers) registerPage(w http.ResponseWriter, r *http.Request) {
+	// Only allow registration if no users exist (first user setup)
+	// or if current user is admin
+	isOpen := h.lib.IsRegistrationOpen()
+	user := UserFromContext(r)
+
+	if !isOpen && (user == nil || !user.IsAdmin) {
+		http.Redirect(w, r, "/login", http.StatusFound)
+		return
+	}
+
+	data := map[string]interface{}{
+		"Page":      "register",
+		"Error":     r.URL.Query().Get("error"),
+		"IsFirstUser": isOpen,
+	}
+	if user != nil {
+		data["User"] = user
+	}
+
+	h.render(w, "register.html", data)
+}
+
+func (h *webHandlers) accountPage(w http.ResponseWriter, r *http.Request) {
+	data := h.baseData(r, "account")
+	data["Success"] = r.URL.Query().Get("success")
+	data["Error"] = r.URL.Query().Get("error")
+	h.render(w, "account.html", data)
+}
+
+func (h *webHandlers) adminUsersPage(w http.ResponseWriter, r *http.Request) {
+	user := UserFromContext(r)
+	if user == nil || !user.IsAdmin {
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
+
+	users, _ := h.lib.ListUsers()
+
+	data := h.baseData(r, "admin")
+	data["Users"] = users
+	data["Success"] = r.URL.Query().Get("success")
+	h.render(w, "admin_users.html", data)
 }
 
 // --- Page handlers ---
@@ -202,7 +284,7 @@ func (h *webHandlers) dashboard(w http.ResponseWriter, r *http.Request) {
 		overdueLoans = overdueResp.Loans
 	}
 
-	data := h.baseData("home")
+	data := h.baseData(r, "home")
 	data["Stats"] = stats
 	data["Recent"] = recent
 	data["Reading"] = reading
@@ -245,7 +327,7 @@ func (h *webHandlers) bookList(w http.ResponseWriter, r *http.Request) {
 
 	shelves, _ := h.lib.ListShelves()
 
-	data := h.baseData("books")
+	data := h.baseData(r, "books")
 	data["Books"] = result
 	data["Params"] = params
 	data["Shelves"] = shelves
@@ -270,7 +352,7 @@ func (h *webHandlers) bookDetail(w http.ResponseWriter, r *http.Request) {
 	tags, _ := h.lib.ListTags()
 	loanHistory, _ := h.lib.GetBookLoanHistory(id)
 
-	data := h.baseData("books")
+	data := h.baseData(r, "books")
 	data["Book"] = book
 	data["AllShelves"] = shelves
 	data["AllTags"] = tags
@@ -279,7 +361,7 @@ func (h *webHandlers) bookDetail(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *webHandlers) bookForm(w http.ResponseWriter, r *http.Request) {
-	data := h.baseData("books")
+	data := h.baseData(r, "books")
 	data["Book"] = &models.Book{Status: "unread"}
 	data["IsNew"] = true
 	h.render(w, "book_form.html", data)
@@ -298,7 +380,7 @@ func (h *webHandlers) bookEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data := h.baseData("books")
+	data := h.baseData(r, "books")
 	data["Book"] = book
 	data["IsNew"] = false
 	h.render(w, "book_form.html", data)
@@ -311,7 +393,7 @@ func (h *webHandlers) shelfList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data := h.baseData("shelves")
+	data := h.baseData(r, "shelves")
 	data["Shelves"] = shelves
 	h.render(w, "shelves.html", data)
 }
@@ -331,7 +413,7 @@ func (h *webHandlers) shelfDetail(w http.ResponseWriter, r *http.Request) {
 
 	books, _ := h.lib.GetShelfBooks(id)
 
-	data := h.baseData("shelves")
+	data := h.baseData(r, "shelves")
 	data["Shelf"] = shelf
 	data["Books"] = books
 	h.render(w, "shelf_detail.html", data)
@@ -344,18 +426,18 @@ func (h *webHandlers) statsPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data := h.baseData("stats")
+	data := h.baseData(r, "stats")
 	data["Stats"] = stats
 	h.render(w, "stats.html", data)
 }
 
 func (h *webHandlers) scanPage(w http.ResponseWriter, r *http.Request) {
-	data := h.baseData("scan")
+	data := h.baseData(r, "scan")
 	h.render(w, "scan.html", data)
 }
 
 func (h *webHandlers) offlinePage(w http.ResponseWriter, r *http.Request) {
-	data := h.baseData("")
+	data := map[string]interface{}{"Page": ""}
 	h.render(w, "offline.html", data)
 }
 
@@ -380,7 +462,7 @@ func (h *webHandlers) loanList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data := h.baseData("loans")
+	data := h.baseData(r, "loans")
 	data["Loans"] = result
 	data["Status"] = status
 	data["Type"] = q.Get("type")
@@ -395,7 +477,7 @@ func (h *webHandlers) loanForm(w http.ResponseWriter, r *http.Request) {
 		loanType = "lent"
 	}
 
-	data := h.baseData("loans")
+	data := h.baseData(r, "loans")
 	data["LoanType"] = loanType
 
 	if bookIDStr != "" {

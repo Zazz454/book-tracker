@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -20,6 +21,7 @@ import (
 var (
 	serverURL string
 	jsonOut   bool
+	authToken string
 	client    = &http.Client{Timeout: 30 * time.Second}
 )
 
@@ -31,7 +33,20 @@ func main() {
 
 	root.PersistentFlags().StringVar(&serverURL, "server", "http://localhost:8080", "Library server URL")
 	root.PersistentFlags().BoolVar(&jsonOut, "json", false, "Output raw JSON")
+	root.PersistentFlags().StringVar(&authToken, "token", "", "Auth token (or set LIBRARY_TOKEN env var)")
 
+	// Load token from env if not set via flag
+	root.PersistentPreRun = func(cmd *cobra.Command, args []string) {
+		if authToken == "" {
+			authToken = os.Getenv("LIBRARY_TOKEN")
+		}
+		if authToken == "" {
+			authToken = loadTokenFromFile()
+		}
+	}
+
+	root.AddCommand(loginCmd())
+	root.AddCommand(logoutCmd())
 	root.AddCommand(serveCmd())
 	root.AddCommand(addCmd())
 	root.AddCommand(listCmd())
@@ -63,6 +78,41 @@ func apiURL(path string) string {
 	return strings.TrimRight(serverURL, "/") + path
 }
 
+func tokenFilePath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".library-token")
+}
+
+func loadTokenFromFile() string {
+	path := tokenFilePath()
+	if path == "" {
+		return ""
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+func saveTokenToFile(token string) error {
+	path := tokenFilePath()
+	if path == "" {
+		return fmt.Errorf("cannot determine home directory")
+	}
+	return os.WriteFile(path, []byte(token+"\n"), 0600)
+}
+
+func removeTokenFile() {
+	path := tokenFilePath()
+	if path != "" {
+		os.Remove(path)
+	}
+}
+
 func doJSON(method, path string, body interface{}) ([]byte, error) {
 	var reader io.Reader
 	if body != nil {
@@ -77,6 +127,9 @@ func doJSON(method, path string, body interface{}) ([]byte, error) {
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	if authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+authToken)
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -85,6 +138,9 @@ func doJSON(method, path string, body interface{}) ([]byte, error) {
 	defer resp.Body.Close()
 
 	data, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode == 401 {
+		return nil, fmt.Errorf("unauthorized - run 'library login' first")
+	}
 	if resp.StatusCode >= 400 {
 		var errResp map[string]string
 		json.Unmarshal(data, &errResp)
@@ -171,6 +227,89 @@ func printBookTable(books []models.Book) {
 }
 
 // --- commands ---
+
+func loginCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "login",
+		Short: "Log in to the library server",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			fmt.Print("Username: ")
+			var username string
+			fmt.Scanln(&username)
+			username = strings.TrimSpace(username)
+			if username == "" {
+				return fmt.Errorf("username is required")
+			}
+
+			fmt.Print("Password: ")
+			var password string
+			fmt.Scanln(&password)
+			password = strings.TrimSpace(password)
+			if password == "" {
+				return fmt.Errorf("password is required")
+			}
+
+			data, err := json.Marshal(map[string]string{
+				"username": username,
+				"password": password,
+			})
+			if err != nil {
+				return err
+			}
+
+			req, err := http.NewRequest("POST", apiURL("/api/auth/login"), bytes.NewReader(data))
+			if err != nil {
+				return err
+			}
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := client.Do(req)
+			if err != nil {
+				return fmt.Errorf("server unreachable: %v", err)
+			}
+			defer resp.Body.Close()
+
+			respData, _ := io.ReadAll(resp.Body)
+			if resp.StatusCode != 200 {
+				var errResp map[string]string
+				json.Unmarshal(respData, &errResp)
+				if msg, ok := errResp["error"]; ok {
+					return fmt.Errorf("%s", msg)
+				}
+				return fmt.Errorf("login failed (HTTP %d)", resp.StatusCode)
+			}
+
+			var loginResp models.LoginResponse
+			json.Unmarshal(respData, &loginResp)
+
+			// Save token
+			authToken = loginResp.Token
+			if err := saveTokenToFile(loginResp.Token); err != nil {
+				fmt.Printf("Warning: could not save token to file: %v\n", err)
+				fmt.Printf("Token: %s\n", loginResp.Token)
+				fmt.Println("Set LIBRARY_TOKEN env var or use --token flag")
+			} else {
+				fmt.Printf("Logged in as %s. Token saved to %s\n", loginResp.User.DisplayName, tokenFilePath())
+			}
+			return nil
+		},
+	}
+}
+
+func logoutCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "logout",
+		Short: "Log out from the library server",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if authToken != "" {
+				doJSON("POST", "/api/auth/logout", nil)
+			}
+			removeTokenFile()
+			fmt.Println("Logged out.")
+			return nil
+		},
+	}
+}
 
 func serveCmd() *cobra.Command {
 	var port int
@@ -716,6 +855,9 @@ func importCmd() *cobra.Command {
 
 			req, _ := http.NewRequest("POST", apiURL("/api/import"), file)
 			req.Header.Set("Content-Type", ct)
+			if authToken != "" {
+				req.Header.Set("Authorization", "Bearer "+authToken)
+			}
 
 			resp, err := client.Do(req)
 			if err != nil {
@@ -748,7 +890,11 @@ func exportCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path := "/api/export?format=" + format
 
-			resp, err := client.Get(apiURL(path))
+			expReq, _ := http.NewRequest("GET", apiURL(path), nil)
+			if authToken != "" {
+				expReq.Header.Set("Authorization", "Bearer "+authToken)
+			}
+			resp, err := client.Do(expReq)
 			if err != nil {
 				return err
 			}

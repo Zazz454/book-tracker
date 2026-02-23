@@ -28,6 +28,71 @@ func (s *Server) Start() error {
 	api := newAPIHandlers(s.lib)
 	web := newWebHandlers(s.lib, s.dataDir)
 
+	// --- Auth API routes (public) ---
+
+	mux.HandleFunc("/api/auth/login", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		api.login(w, r)
+	})
+
+	mux.HandleFunc("/api/auth/register", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		api.register(w, r)
+	})
+
+	mux.HandleFunc("/api/auth/logout", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		api.logout(w, r)
+	})
+
+	mux.HandleFunc("/api/auth/me", func(w http.ResponseWriter, r *http.Request) {
+		api.me(w, r)
+	})
+
+	// --- User management API routes ---
+
+	mux.HandleFunc("/api/users", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			api.listUsers(w, r)
+		default:
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		}
+	})
+
+	mux.HandleFunc("/api/users/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			api.deleteUser(w, r)
+		} else {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		}
+	})
+
+	mux.HandleFunc("/api/account/password", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		api.changePassword(w, r)
+	})
+
+	mux.HandleFunc("/api/account/profile", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		api.updateProfile(w, r)
+	})
+
 	// --- JSON API routes ---
 
 	// Books
@@ -209,8 +274,8 @@ func (s *Server) Start() error {
 		http.ServeFile(w, r, filepath.Join(staticDir, "sw.js"))
 	})
 
-	// Apply middleware
-	handler := logging(cors(mux))
+	// Apply middleware: logging -> cors -> auth -> mux
+	handler := logging(cors(auth(s.lib)(mux)))
 
 	addr := fmt.Sprintf(":%d", s.port)
 	printServerInfo(s.port)

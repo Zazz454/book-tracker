@@ -98,6 +98,31 @@ func (d *DB) migrate() error {
 
 		`CREATE INDEX IF NOT EXISTS idx_loans_book_id ON loans(book_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_loans_checked_in ON loans(checked_in)`,
+
+		// --- User authentication tables ---
+
+		`CREATE TABLE IF NOT EXISTS users (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+			display_name TEXT NOT NULL,
+			password_hash TEXT NOT NULL,
+			is_admin INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+
+		`CREATE TABLE IF NOT EXISTS sessions (
+			token TEXT PRIMARY KEY,
+			user_id INTEGER NOT NULL,
+			expires_at DATETIME NOT NULL,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+		)`,
+
+		`CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)`,
+
+		// Add user_id column to loans (nullable for backwards compatibility with existing data)
+		// New loans will have user_id set; old ones will be NULL.
 	}
 
 	for _, m := range migrations {
@@ -105,5 +130,35 @@ func (d *DB) migrate() error {
 			return err
 		}
 	}
+
+	// Add user_id to loans if not exists (ALTER TABLE IF NOT EXISTS isn't supported in SQLite)
+	d.addColumnIfNotExists("loans", "user_id", "INTEGER REFERENCES users(id)")
+
 	return nil
+}
+
+// addColumnIfNotExists adds a column to a table if it doesn't already exist.
+func (d *DB) addColumnIfNotExists(table, column, colType string) {
+	// Check if column exists by querying table_info
+	rows, err := d.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notnull int
+		var dflt interface{}
+		var pk int
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
+			continue
+		}
+		if name == column {
+			return // column already exists
+		}
+	}
+
+	d.Exec("ALTER TABLE " + table + " ADD COLUMN " + column + " " + colType)
 }

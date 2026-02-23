@@ -1,0 +1,94 @@
+{{define "title"}}{{if .IsFirstUser}}Setup - My Library{{else}}Add User - My Library{{end}}{{end}}
+
+{{define "content"}}
+<div class="auth-page">
+    <div class="auth-card">
+        {{if .IsFirstUser}}
+        <h1>Welcome to My Library</h1>
+        <p class="auth-subtitle">Create your admin account to get started</p>
+        {{else}}
+        <h1>Add Family Member</h1>
+        <p class="auth-subtitle">Create a new account</p>
+        {{end}}
+
+        {{if .Error}}
+        <div class="auth-error">{{.Error}}</div>
+        {{end}}
+
+        <form id="registerForm" class="auth-form">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" class="form-input"
+                       required autofocus autocomplete="username" minlength="2">
+            </div>
+            <div class="form-group">
+                <label for="display_name">Display Name</label>
+                <input type="text" id="display_name" name="display_name" class="form-input"
+                       placeholder="How your name appears" autocomplete="name">
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" class="form-input"
+                       required autocomplete="new-password" minlength="4">
+            </div>
+            <button type="submit" class="btn btn-primary btn-full">
+                {{if .IsFirstUser}}Create Admin Account{{else}}Create Account{{end}}
+            </button>
+        </form>
+
+        {{if not .IsFirstUser}}
+        <div class="auth-links">
+            <a href="/admin/users">Back to user management</a>
+        </div>
+        {{end}}
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+document.getElementById('registerForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    var username = document.getElementById('username').value;
+    var displayName = document.getElementById('display_name').value;
+    var password = document.getElementById('password').value;
+    var btn = this.querySelector('button[type="submit"]');
+    btn.disabled = true;
+    btn.textContent = 'Creating...';
+
+    try {
+        var resp = await fetch('/api/auth/register', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                username: username,
+                display_name: displayName || username,
+                password: password
+            })
+        });
+        if (resp.ok) {
+            {{if .IsFirstUser}}
+            window.location = '/';
+            {{else}}
+            window.location = '/admin/users?success=User+created';
+            {{end}}
+        } else {
+            var data = await resp.json();
+            btn.disabled = false;
+            btn.textContent = '{{if .IsFirstUser}}Create Admin Account{{else}}Create Account{{end}}';
+            var err = document.querySelector('.auth-error');
+            if (!err) {
+                err = document.createElement('div');
+                err.className = 'auth-error';
+                document.querySelector('.auth-form').before(err);
+            }
+            err.textContent = data.error || 'Registration failed';
+        }
+    } catch(e) {
+        btn.disabled = false;
+        btn.textContent = '{{if .IsFirstUser}}Create Admin Account{{else}}Create Account{{end}}';
+        alert('Connection error');
+    }
+});
+</script>
+{{end}}

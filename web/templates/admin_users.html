@@ -1,0 +1,54 @@
+{{define "title"}}Manage Users - My Library{{end}}
+
+{{define "content"}}
+<div class="settings-page">
+    <div class="page-header">
+        <h1>Manage Users</h1>
+        <a href="/register" class="btn btn-primary">Add User</a>
+    </div>
+
+    {{if .Success}}
+    <div class="notice notice-success">{{.Success}}</div>
+    {{end}}
+
+    <div class="user-list">
+        {{range .Users}}
+        <div class="user-card">
+            <div class="user-info">
+                <div class="user-avatar">{{slice .Username 0 1}}</div>
+                <div>
+                    <strong>{{.DisplayName}}</strong>
+                    <span class="text-muted">@{{.Username}}</span>
+                    {{if .IsAdmin}}<span class="badge badge-admin">Admin</span>{{end}}
+                </div>
+            </div>
+            <div class="user-meta">
+                <span class="text-muted">Joined {{formatDate .CreatedAt}}</span>
+                {{if and (not .IsAdmin) ($.User.IsAdmin)}}
+                <button class="btn btn-sm btn-danger" onclick="deleteUser({{.ID}}, '{{.Username}}')">Remove</button>
+                {{end}}
+            </div>
+        </div>
+        {{end}}
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+async function deleteUser(id, username) {
+    if (!confirm('Remove user "' + username + '"? This cannot be undone.')) return;
+    try {
+        var resp = await fetch('/api/users/' + id, {method: 'DELETE'});
+        if (resp.ok) {
+            window.location = '/admin/users?success=User+removed';
+        } else {
+            var data = await resp.json();
+            alert(data.error || 'Failed to remove user');
+        }
+    } catch(e) {
+        alert('Connection error');
+    }
+}
+</script>
+{{end}}

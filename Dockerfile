@@ -3,12 +3,11 @@ FROM golang:1.24-alpine AS builder
 
 WORKDIR /app
 
-# Copy go mod files
-COPY go.mod go.sum ./
-RUN go mod download
-
-# Copy source code
+# Copy source code (go mod tidy needs to see source files for golang.org/x/crypto)
 COPY . .
+
+# Download and tidy dependencies
+RUN go mod tidy && go mod download
 
 # Build the server binary (pure Go, no CGO needed)
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o library-server ./cmd/server
@@ -48,7 +47,7 @@ ENV LIBRARY_DATA_DIR=/app/data
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/api/stats || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/login || exit 1
 
 # Run the server
 CMD ["./library-server", "--port", "8080", "--data", "/app/data"]

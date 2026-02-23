@@ -1,0 +1,111 @@
+{{define "title"}}Account - My Library{{end}}
+
+{{define "content"}}
+<div class="settings-page">
+    <h1>Account Settings</h1>
+
+    {{if .Success}}
+    <div class="notice notice-success">{{.Success}}</div>
+    {{end}}
+    {{if .Error}}
+    <div class="notice notice-warning">{{.Error}}</div>
+    {{end}}
+
+    <div class="settings-section">
+        <h2>Profile</h2>
+        <form id="profileForm" class="settings-form">
+            <div class="form-group">
+                <label>Username</label>
+                <input type="text" class="form-input" value="{{.User.Username}}" disabled>
+                <small class="form-hint">Username cannot be changed</small>
+            </div>
+            <div class="form-group">
+                <label for="display_name">Display Name</label>
+                <input type="text" id="display_name" name="display_name" class="form-input"
+                       value="{{.User.DisplayName}}" required>
+            </div>
+            <button type="submit" class="btn btn-primary">Save Profile</button>
+        </form>
+    </div>
+
+    <div class="settings-section">
+        <h2>Change Password</h2>
+        <form id="passwordForm" class="settings-form">
+            <div class="form-group">
+                <label for="current_password">Current Password</label>
+                <input type="password" id="current_password" class="form-input" required
+                       autocomplete="current-password">
+            </div>
+            <div class="form-group">
+                <label for="new_password">New Password</label>
+                <input type="password" id="new_password" class="form-input" required
+                       autocomplete="new-password" minlength="4">
+            </div>
+            <button type="submit" class="btn btn-primary">Change Password</button>
+        </form>
+    </div>
+
+    <div class="settings-section">
+        <h2>Session</h2>
+        <p>Signed in as <strong>{{.User.DisplayName}}</strong> ({{.User.Username}})</p>
+        <button class="btn btn-danger" onclick="logout()">Sign Out</button>
+    </div>
+
+    {{if .User.IsAdmin}}
+    <div class="settings-section">
+        <h2>Administration</h2>
+        <a href="/admin/users" class="btn">Manage Users</a>
+    </div>
+    {{end}}
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+document.getElementById('profileForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    var displayName = document.getElementById('display_name').value;
+    try {
+        var resp = await fetch('/api/account/profile', {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({display_name: displayName})
+        });
+        if (resp.ok) {
+            window.location = '/account?success=Profile+updated';
+        } else {
+            var data = await resp.json();
+            alert(data.error || 'Failed to update profile');
+        }
+    } catch(e) {
+        alert('Connection error');
+    }
+});
+
+document.getElementById('passwordForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    var current = document.getElementById('current_password').value;
+    var newPw = document.getElementById('new_password').value;
+    try {
+        var resp = await fetch('/api/account/password', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({current_password: current, new_password: newPw})
+        });
+        if (resp.ok) {
+            window.location = '/account?success=Password+changed';
+        } else {
+            var data = await resp.json();
+            alert(data.error || 'Failed to change password');
+        }
+    } catch(e) {
+        alert('Connection error');
+    }
+});
+
+async function logout() {
+    await fetch('/api/auth/logout', {method: 'POST'});
+    window.location = '/login';
+}
+</script>
+{{end}}

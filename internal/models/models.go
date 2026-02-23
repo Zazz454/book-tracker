@@ -4,6 +4,56 @@ import (
 	"time"
 )
 
+// --- User types ---
+
+// User represents a registered user account.
+type User struct {
+	ID           int64     `json:"id"`
+	Username     string    `json:"username"`
+	DisplayName  string    `json:"display_name"`
+	IsAdmin      bool      `json:"is_admin"`
+	PasswordHash string    `json:"-"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+// Session represents an authenticated session.
+type Session struct {
+	Token     string    `json:"token"`
+	UserID    int64     `json:"user_id"`
+	ExpiresAt time.Time `json:"expires_at"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// LoginRequest is the payload for logging in.
+type LoginRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+// LoginResponse is returned after successful login.
+type LoginResponse struct {
+	Token string `json:"token"`
+	User  *User  `json:"user"`
+}
+
+// RegisterRequest is the payload for creating a new user.
+type RegisterRequest struct {
+	Username    string `json:"username"`
+	DisplayName string `json:"display_name"`
+	Password    string `json:"password"`
+}
+
+// ChangePasswordRequest is the payload for changing password.
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+
+// UpdateProfileRequest is the payload for updating display name.
+type UpdateProfileRequest struct {
+	DisplayName string `json:"display_name"`
+}
+
 // Book reading status constants
 const (
 	StatusUnread    = "unread"
@@ -221,6 +271,7 @@ type ImportResult struct {
 type Loan struct {
 	ID            int64      `json:"id"`
 	BookID        int64      `json:"book_id"`
+	UserID        int64      `json:"user_id,omitempty"`
 	Book          *Book      `json:"book,omitempty"`
 	LoanType      string     `json:"loan_type"`
 	PersonName    string     `json:"person_name"`

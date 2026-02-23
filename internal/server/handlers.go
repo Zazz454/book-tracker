@@ -497,6 +497,199 @@ func (h *apiHandlers) exportData(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// --- Auth handlers ---
+
+func (h *apiHandlers) login(w http.ResponseWriter, r *http.Request) {
+	var req models.LoginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+
+	resp, err := h.lib.Login(req.Username, req.Password)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+
+	// Set session cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:     "session_token",
+		Value:    resp.Token,
+		Path:     "/",
+		MaxAge:   30 * 24 * 60 * 60, // 30 days
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *apiHandlers) register(w http.ResponseWriter, r *http.Request) {
+	var req models.RegisterRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+
+	// First user is always admin; subsequent users require admin auth
+	isFirstUser := h.lib.IsRegistrationOpen()
+	if !isFirstUser {
+		// Check if the requester is an admin
+		user := UserFromContext(r)
+		if user == nil || !user.IsAdmin {
+			writeError(w, http.StatusForbidden, "only admins can create new users")
+			return
+		}
+	}
+
+	user, err := h.lib.Register(&req, isFirstUser)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// If first user, auto-login
+	if isFirstUser {
+		resp, err := h.lib.Login(req.Username, req.Password)
+		if err == nil {
+			http.SetCookie(w, &http.Cookie{
+				Name:     "session_token",
+				Value:    resp.Token,
+				Path:     "/",
+				MaxAge:   30 * 24 * 60 * 60,
+				HttpOnly: true,
+				SameSite: http.SameSiteLaxMode,
+			})
+			writeJSON(w, http.StatusCreated, resp)
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusCreated, user)
+}
+
+func (h *apiHandlers) logout(w http.ResponseWriter, r *http.Request) {
+	// Get token from cookie or header
+	token := ""
+	if cookie, err := r.Cookie("session_token"); err == nil {
+		token = cookie.Value
+	}
+	if token == "" {
+		auth := r.Header.Get("Authorization")
+		if strings.HasPrefix(auth, "Bearer ") {
+			token = strings.TrimPrefix(auth, "Bearer ")
+		}
+	}
+
+	if token != "" {
+		h.lib.Logout(token)
+	}
+
+	// Clear cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:     "session_token",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+	})
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "logged out"})
+}
+
+func (h *apiHandlers) me(w http.ResponseWriter, r *http.Request) {
+	user := UserFromContext(r)
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "not authenticated")
+		return
+	}
+	writeJSON(w, http.StatusOK, user)
+}
+
+func (h *apiHandlers) changePassword(w http.ResponseWriter, r *http.Request) {
+	user := UserFromContext(r)
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "not authenticated")
+		return
+	}
+
+	var req models.ChangePasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+
+	if err := h.lib.ChangePassword(user.ID, req.CurrentPassword, req.NewPassword); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "password changed"})
+}
+
+func (h *apiHandlers) updateProfile(w http.ResponseWriter, r *http.Request) {
+	user := UserFromContext(r)
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "not authenticated")
+		return
+	}
+
+	var req models.UpdateProfileRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+
+	updated, err := h.lib.UpdateProfile(user.ID, req.DisplayName)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, updated)
+}
+
+func (h *apiHandlers) listUsers(w http.ResponseWriter, r *http.Request) {
+	user := UserFromContext(r)
+	if user == nil || !user.IsAdmin {
+		writeError(w, http.StatusForbidden, "admin access required")
+		return
+	}
+
+	users, err := h.lib.ListUsers()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, users)
+}
+
+func (h *apiHandlers) deleteUser(w http.ResponseWriter, r *http.Request) {
+	user := UserFromContext(r)
+	if user == nil || !user.IsAdmin {
+		writeError(w, http.StatusForbidden, "admin access required")
+		return
+	}
+
+	id, err := parseID(r.URL.Path)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if id == user.ID {
+		writeError(w, http.StatusBadRequest, "cannot delete your own account")
+		return
+	}
+
+	if err := h.lib.DeleteUser(id); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
 // --- ISBN Lookup handler ---
 
 func (h *apiHandlers) lookupISBN(w http.ResponseWriter, r *http.Request) {
