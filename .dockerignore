@@ -1,0 +1,36 @@
+# Git
+.git
+.gitignore
+
+# Build artifacts
+bin/
+tmp/
+
+# Data directory (runtime data shouldn't be in image)
+data/
+
+# Go workspace
+go-workspace/
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# SQLite databases
+*.db
+*.db-wal
+*.db-shm
+
+# Test files
+*_test.go
+
+# Documentation
+README.md
+PLAN.md

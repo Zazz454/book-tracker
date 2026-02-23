@@ -1,0 +1,54 @@
+{{template "layout" .}}
+
+{{define "title"}}{{.Shelf.Name}} - My Library{{end}}
+
+{{define "content"}}
+<div class="shelf-detail">
+    <div class="detail-header">
+        <a href="/shelves" class="back-link">&larr; Back to Shelves</a>
+        <div class="detail-actions">
+            <button class="btn btn-sm btn-danger" onclick="deleteShelf({{.Shelf.ID}})">Delete Shelf</button>
+        </div>
+    </div>
+
+    <h1>{{.Shelf.Name}}</h1>
+    {{if .Shelf.Description}}<p class="shelf-description">{{.Shelf.Description}}</p>{{end}}
+    <p class="shelf-count">{{.Shelf.BookCount}} book{{if ne .Shelf.BookCount 1}}s{{end}}</p>
+
+    {{if and .Books (gt (len .Books.Books) 0)}}
+    <div class="book-grid">
+        {{range .Books.Books}}
+        <a href="/books/{{.ID}}" class="book-card">
+            <div class="book-cover">
+                {{if .CoverPath}}
+                <img src="/{{.CoverPath}}" alt="{{.Title}}" loading="lazy">
+                {{else}}
+                <div class="cover-placeholder">
+                    <span>{{.Title}}</span>
+                </div>
+                {{end}}
+            </div>
+            <div class="book-info">
+                <span class="book-title">{{.Title}}</span>
+                <span class="book-author">{{.Author}}</span>
+            </div>
+        </a>
+        {{end}}
+    </div>
+    {{else}}
+    <div class="empty-state">
+        <p>No books in this shelf yet. Add books from the book detail page.</p>
+    </div>
+    {{end}}
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+async function deleteShelf(id) {
+    if (!confirm('Delete this shelf? Books in it will not be deleted.')) return;
+    await fetch(`/api/shelves/${id}`, {method: 'DELETE'});
+    window.location = '/shelves';
+}
+</script>
+{{end}}

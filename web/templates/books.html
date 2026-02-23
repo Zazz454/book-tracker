@@ -1,0 +1,115 @@
+{{template "layout" .}}
+
+{{define "title"}}Books - My Library{{end}}
+
+{{define "content"}}
+<div class="books-page">
+    <div class="page-header">
+        <h1>Books</h1>
+        <div class="header-actions">
+            <a href="/books/new" class="btn btn-primary">+ Add Book</a>
+        </div>
+    </div>
+
+    <div class="filters-bar">
+        <form method="GET" action="/books" class="search-form">
+            <input type="search" name="q" placeholder="Search books..." value="{{.Params.Query}}" class="search-input">
+            <button type="submit" class="btn btn-sm">Search</button>
+        </form>
+
+        <div class="filter-group">
+            <select name="status" onchange="applyFilter('status', this.value)" class="filter-select">
+                <option value="">All Status</option>
+                <option value="unread" {{if eq .Params.Status "unread"}}selected{{end}}>Unread</option>
+                <option value="reading" {{if eq .Params.Status "reading"}}selected{{end}}>Reading</option>
+                <option value="finished" {{if eq .Params.Status "finished"}}selected{{end}}>Finished</option>
+                <option value="abandoned" {{if eq .Params.Status "abandoned"}}selected{{end}}>Abandoned</option>
+            </select>
+
+            <select name="sort" onchange="applyFilter('sort', this.value)" class="filter-select">
+                <option value="created_at" {{if eq .Params.Sort "created_at"}}selected{{end}}>Date Added</option>
+                <option value="title" {{if eq .Params.Sort "title"}}selected{{end}}>Title</option>
+                <option value="author" {{if eq .Params.Sort "author"}}selected{{end}}>Author</option>
+                <option value="rating" {{if eq .Params.Sort "rating"}}selected{{end}}>Rating</option>
+                <option value="year" {{if eq .Params.Sort "year"}}selected{{end}}>Year</option>
+            </select>
+
+            <div class="view-toggle">
+                <button class="view-btn {{if ne .View "list"}}active{{end}}" onclick="setView('grid')" title="Grid view">&#9638;</button>
+                <button class="view-btn {{if eq .View "list"}}active{{end}}" onclick="setView('list')" title="List view">&#9776;</button>
+            </div>
+        </div>
+    </div>
+
+    {{if .Books}}
+    <div class="book-grid {{if eq .View "list"}}list-view{{end}}" id="bookGrid">
+        {{range .Books.Books}}
+        <a href="/books/{{.ID}}" class="book-card">
+            <div class="book-cover">
+                {{if .CoverPath}}
+                <img src="/{{.CoverPath}}" alt="{{.Title}}" loading="lazy">
+                {{else}}
+                <div class="cover-placeholder">
+                    <span>{{.Title}}</span>
+                </div>
+                {{end}}
+                <span class="status-badge {{statusColor .Status}}">{{statusLabel .Status}}</span>
+            </div>
+            <div class="book-info">
+                <span class="book-title">{{.Title}}</span>
+                <span class="book-author">{{.Author}}</span>
+                {{if gt .Rating 0}}
+                <span class="book-rating">{{ratingStars .Rating}}</span>
+                {{end}}
+                <span class="book-meta">
+                    {{if gt .Year 0}}{{.Year}}{{end}}
+                    {{if .Genre}} &middot; {{.Genre}}{{end}}
+                </span>
+            </div>
+        </a>
+        {{end}}
+    </div>
+
+    {{if gt .Books.Total .Books.Limit}}
+    <div class="pagination">
+        {{if gt .Books.Offset 0}}
+        <a href="?offset={{sub .Books.Offset .Books.Limit}}&limit={{.Books.Limit}}&status={{.Params.Status}}&sort={{.Params.Sort}}&q={{.Params.Query}}" class="btn btn-sm">Previous</a>
+        {{end}}
+        <span class="page-info">Showing {{add .Books.Offset 1}}-{{add .Books.Offset (len .Books.Books)}} of {{.Books.Total}}</span>
+        {{if lt (add .Books.Offset (len .Books.Books)) .Books.Total}}
+        <a href="?offset={{add .Books.Offset .Books.Limit}}&limit={{.Books.Limit}}&status={{.Params.Status}}&sort={{.Params.Sort}}&q={{.Params.Query}}" class="btn btn-sm">Next</a>
+        {{end}}
+    </div>
+    {{end}}
+
+    {{else}}
+    <div class="empty-state">
+        <h2>No books found</h2>
+        <p>Try adjusting your filters or add a new book.</p>
+        <a href="/books/new" class="btn btn-primary">+ Add Book</a>
+    </div>
+    {{end}}
+</div>
+
+{{end}}
+
+{{define "scripts"}}
+<script>
+function applyFilter(name, value) {
+    const url = new URL(window.location);
+    if (value) {
+        url.searchParams.set(name, value);
+    } else {
+        url.searchParams.delete(name);
+    }
+    url.searchParams.delete('offset');
+    window.location = url;
+}
+
+function setView(view) {
+    const url = new URL(window.location);
+    url.searchParams.set('view', view);
+    window.location = url;
+}
+</script>
+{{end}}

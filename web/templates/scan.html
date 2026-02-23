@@ -1,0 +1,103 @@
+{{template "layout" .}}
+
+{{define "title"}}Scan ISBN - My Library{{end}}
+
+{{define "content"}}
+<div class="scan-page">
+    <h1>Scan ISBN Barcode</h1>
+
+    <div class="scanner-container" id="scannerContainer">
+        <video id="scannerVideo" autoplay playsinline></video>
+        <div class="scanner-overlay">
+            <div class="scanner-frame"></div>
+        </div>
+        <p class="scanner-hint">Point your camera at a book's barcode</p>
+    </div>
+
+    <div class="scanner-controls">
+        <button class="btn btn-primary" id="startScan" onclick="startScanner()">Start Camera</button>
+        <button class="btn" id="stopScan" onclick="stopScanner()" style="display:none">Stop Camera</button>
+    </div>
+
+    <div class="manual-entry">
+        <h3>Or enter ISBN manually</h3>
+        <div class="isbn-row">
+            <input type="text" id="manualISBN" placeholder="Enter ISBN..." class="form-input">
+            <button class="btn btn-primary" onclick="lookupManualISBN()">Lookup</button>
+        </div>
+    </div>
+
+    <div class="lookup-result" id="lookupResult" style="display:none">
+        <h3>Book Found</h3>
+        <div class="result-card" id="resultCard"></div>
+        <div class="result-actions">
+            <button class="btn" onclick="dismissResult()">Cancel</button>
+            <button class="btn btn-primary" onclick="addFoundBook()">Add to Library</button>
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script src="/static/scanner.js"></script>
+<script>
+let foundBook = null;
+
+async function lookupAndShow(isbn) {
+    try {
+        const resp = await fetch(`/api/lookup/${encodeURIComponent(isbn)}`);
+        if (!resp.ok) throw new Error('Not found');
+        foundBook = await resp.json();
+
+        const card = document.getElementById('resultCard');
+        card.innerHTML = `
+            <div class="result-info">
+                ${foundBook.cover_url ? `<img src="${foundBook.cover_url}" class="result-cover">` : ''}
+                <div>
+                    <strong>${foundBook.title}</strong><br>
+                    by ${foundBook.author}<br>
+                    ${foundBook.year ? `Published: ${foundBook.year}` : ''}<br>
+                    ${foundBook.pages ? `${foundBook.pages} pages` : ''}
+                </div>
+            </div>
+        `;
+        document.getElementById('lookupResult').style.display = 'block';
+    } catch (e) {
+        alert('ISBN not found: ' + isbn);
+    }
+}
+
+async function lookupManualISBN() {
+    const isbn = document.getElementById('manualISBN').value.trim();
+    if (!isbn) return;
+    await lookupAndShow(isbn);
+}
+
+async function addFoundBook() {
+    if (!foundBook) return;
+    const resp = await fetch('/api/books', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            title: foundBook.title,
+            author: foundBook.author,
+            isbn: foundBook.isbn,
+            genre: foundBook.genre || '',
+            pages: foundBook.pages || 0,
+            year: foundBook.year || 0,
+        })
+    });
+    if (resp.ok) {
+        const book = await resp.json();
+        window.location = `/books/${book.id}`;
+    } else {
+        alert('Failed to add book');
+    }
+}
+
+function dismissResult() {
+    document.getElementById('lookupResult').style.display = 'none';
+    foundBook = null;
+}
+</script>
+{{end}}

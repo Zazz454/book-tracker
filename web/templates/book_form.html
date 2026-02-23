@@ -1,0 +1,153 @@
+{{template "layout" .}}
+
+{{define "title"}}{{if .IsNew}}Add Book{{else}}Edit Book{{end}} - My Library{{end}}
+
+{{define "content"}}
+<div class="book-form-page">
+    <div class="page-header">
+        <h1>{{if .IsNew}}Add Book{{else}}Edit Book{{end}}</h1>
+    </div>
+
+    {{if .IsNew}}
+    <div class="isbn-lookup">
+        <h3>Quick Add by ISBN</h3>
+        <div class="isbn-row">
+            <input type="text" id="isbnLookup" placeholder="Enter ISBN..." class="form-input">
+            <button class="btn btn-primary" onclick="lookupISBN()">Lookup</button>
+        </div>
+        <p class="hint">Enter an ISBN to auto-fill book details</p>
+    </div>
+    {{end}}
+
+    <form id="bookForm" class="book-form" onsubmit="submitBook(event)">
+        <input type="hidden" id="bookId" value="{{if not .IsNew}}{{.Book.ID}}{{end}}">
+
+        <div class="form-group">
+            <label for="title">Title *</label>
+            <input type="text" id="title" name="title" value="{{.Book.Title}}" required class="form-input">
+        </div>
+
+        <div class="form-group">
+            <label for="author">Author *</label>
+            <input type="text" id="author" name="author" value="{{.Book.Author}}" required class="form-input">
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="isbn">ISBN</label>
+                <input type="text" id="isbn" name="isbn" value="{{.Book.ISBN}}" class="form-input">
+            </div>
+            <div class="form-group">
+                <label for="genre">Genre</label>
+                <input type="text" id="genre" name="genre" value="{{.Book.Genre}}" class="form-input">
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="pages">Pages</label>
+                <input type="number" id="pages" name="pages" value="{{if gt .Book.Pages 0}}{{.Book.Pages}}{{end}}" class="form-input" min="0">
+            </div>
+            <div class="form-group">
+                <label for="year">Year</label>
+                <input type="number" id="year" name="year" value="{{if gt .Book.Year 0}}{{.Book.Year}}{{end}}" class="form-input" min="0" max="2100">
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="status">Status</label>
+            <select id="status" name="status" class="form-input">
+                <option value="unread" {{if eq .Book.Status "unread"}}selected{{end}}>Unread</option>
+                <option value="reading" {{if eq .Book.Status "reading"}}selected{{end}}>Reading</option>
+                <option value="finished" {{if eq .Book.Status "finished"}}selected{{end}}>Finished</option>
+                <option value="abandoned" {{if eq .Book.Status "abandoned"}}selected{{end}}>Abandoned</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="notes">Notes</label>
+            <textarea id="notes" name="notes" rows="4" class="form-input">{{.Book.Notes}}</textarea>
+        </div>
+
+        <div class="form-actions">
+            <a href="{{if .IsNew}}/books{{else}}/books/{{.Book.ID}}{{end}}" class="btn">Cancel</a>
+            <button type="submit" class="btn btn-primary">{{if .IsNew}}Add Book{{else}}Save Changes{{end}}</button>
+        </div>
+    </form>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+async function lookupISBN() {
+    const isbn = document.getElementById('isbnLookup').value.trim();
+    if (!isbn) return;
+
+    const btn = event.target;
+    btn.textContent = 'Looking up...';
+    btn.disabled = true;
+
+    try {
+        const resp = await fetch(`/api/lookup/${encodeURIComponent(isbn)}`);
+        if (!resp.ok) throw new Error('Not found');
+        const data = await resp.json();
+
+        if (data.title) document.getElementById('title').value = data.title;
+        if (data.author) document.getElementById('author').value = data.author;
+        if (data.isbn) document.getElementById('isbn').value = data.isbn;
+        if (data.genre) document.getElementById('genre').value = data.genre;
+        if (data.pages) document.getElementById('pages').value = data.pages;
+        if (data.year) document.getElementById('year').value = data.year;
+    } catch (e) {
+        alert('ISBN not found. Please enter details manually.');
+    } finally {
+        btn.textContent = 'Lookup';
+        btn.disabled = false;
+    }
+}
+
+async function submitBook(e) {
+    e.preventDefault();
+    const id = document.getElementById('bookId').value;
+    const isNew = !id;
+
+    const body = {
+        title: document.getElementById('title').value,
+        author: document.getElementById('author').value,
+        isbn: document.getElementById('isbn').value,
+        genre: document.getElementById('genre').value,
+        pages: parseInt(document.getElementById('pages').value) || 0,
+        year: parseInt(document.getElementById('year').value) || 0,
+        status: document.getElementById('status').value,
+        notes: document.getElementById('notes').value,
+    };
+
+    let url = '/api/books';
+    let method = 'POST';
+
+    if (!isNew) {
+        url = `/api/books/${id}`;
+        method = 'PUT';
+    }
+
+    try {
+        const resp = await fetch(url, {
+            method,
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)
+        });
+
+        if (!resp.ok) {
+            const err = await resp.json();
+            alert(err.error || 'Failed to save book');
+            return;
+        }
+
+        const book = await resp.json();
+        window.location = `/books/${book.id}`;
+    } catch (e) {
+        alert('Error saving book: ' + e.message);
+    }
+}
+</script>
+{{end}}

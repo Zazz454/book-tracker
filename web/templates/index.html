@@ -1,0 +1,98 @@
+{{template "layout" .}}
+
+{{define "title"}}My Library{{end}}
+
+{{define "content"}}
+<div class="dashboard">
+    <section class="dash-header">
+        <h1>My Library</h1>
+        <a href="/books/new" class="btn btn-primary">+ Add Book</a>
+    </section>
+
+    {{if .Stats}}
+    <section class="stats-cards">
+        <div class="stat-card">
+            <span class="stat-number">{{.Stats.TotalBooks}}</span>
+            <span class="stat-label">Total Books</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-number">{{.Stats.BooksReading}}</span>
+            <span class="stat-label">Reading</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-number">{{.Stats.BooksRead}}</span>
+            <span class="stat-label">Finished</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-number">{{.Stats.TotalPages}}</span>
+            <span class="stat-label">Pages Read</span>
+        </div>
+    </section>
+    {{end}}
+
+    {{if and .Reading (gt (len .Reading.Books) 0)}}
+    <section class="dash-section">
+        <div class="section-header">
+            <h2>Currently Reading</h2>
+            <a href="/books?status=reading" class="link">View all</a>
+        </div>
+        <div class="book-grid">
+            {{range .Reading.Books}}
+            <a href="/books/{{.ID}}" class="book-card">
+                <div class="book-cover">
+                    {{if .CoverPath}}
+                    <img src="/{{.CoverPath}}" alt="{{.Title}}" loading="lazy">
+                    {{else}}
+                    <div class="cover-placeholder">
+                        <span>{{.Title}}</span>
+                    </div>
+                    {{end}}
+                </div>
+                <div class="book-info">
+                    <span class="book-title">{{.Title}}</span>
+                    <span class="book-author">{{.Author}}</span>
+                </div>
+            </a>
+            {{end}}
+        </div>
+    </section>
+    {{end}}
+
+    {{if and .Recent (gt (len .Recent.Books) 0)}}
+    <section class="dash-section">
+        <div class="section-header">
+            <h2>Recently Added</h2>
+            <a href="/books?sort=created_at&order=desc" class="link">View all</a>
+        </div>
+        <div class="book-grid">
+            {{range .Recent.Books}}
+            <a href="/books/{{.ID}}" class="book-card">
+                <div class="book-cover">
+                    {{if .CoverPath}}
+                    <img src="/{{.CoverPath}}" alt="{{.Title}}" loading="lazy">
+                    {{else}}
+                    <div class="cover-placeholder">
+                        <span>{{.Title}}</span>
+                    </div>
+                    {{end}}
+                </div>
+                <div class="book-info">
+                    <span class="book-title">{{.Title}}</span>
+                    <span class="book-author">{{.Author}}</span>
+                    <span class="book-status {{statusColor .Status}}">{{statusLabel .Status}}</span>
+                </div>
+            </a>
+            {{end}}
+        </div>
+    </section>
+    {{end}}
+
+    {{if and (not .Reading) (not .Recent)}}
+    <section class="empty-state">
+        <h2>Your library is empty</h2>
+        <p>Add your first book to get started.</p>
+        <a href="/books/new" class="btn btn-primary">+ Add Book</a>
+    </section>
+    {{end}}
+</div>
+{{end}}

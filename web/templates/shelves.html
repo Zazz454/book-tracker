@@ -1,0 +1,54 @@
+{{template "layout" .}}
+
+{{define "title"}}Shelves - My Library{{end}}
+
+{{define "content"}}
+<div class="shelves-page">
+    <div class="page-header">
+        <h1>Shelves</h1>
+        <button class="btn btn-primary" onclick="createShelf()">+ New Shelf</button>
+    </div>
+
+    {{if .Shelves}}
+    <div class="shelf-grid">
+        {{range .Shelves}}
+        <a href="/shelves/{{.ID}}" class="shelf-card">
+            <div class="shelf-icon">&#128218;</div>
+            <h3>{{.Name}}</h3>
+            {{if .Description}}<p class="shelf-desc">{{.Description}}</p>{{end}}
+            <span class="shelf-count">{{.BookCount}} book{{if ne .BookCount 1}}s{{end}}</span>
+        </a>
+        {{end}}
+    </div>
+    {{else}}
+    <div class="empty-state">
+        <h2>No shelves yet</h2>
+        <p>Create shelves to organize your books into collections.</p>
+        <button class="btn btn-primary" onclick="createShelf()">+ New Shelf</button>
+    </div>
+    {{end}}
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+async function createShelf() {
+    const name = prompt('Shelf name:');
+    if (!name) return;
+    const desc = prompt('Description (optional):') || '';
+
+    const resp = await fetch('/api/shelves', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({name, description: desc})
+    });
+
+    if (resp.ok) {
+        location.reload();
+    } else {
+        const err = await resp.json();
+        alert(err.error || 'Failed to create shelf');
+    }
+}
+</script>
+{{end}}

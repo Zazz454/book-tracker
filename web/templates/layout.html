@@ -1,0 +1,66 @@
+{{define "layout"}}
+<!DOCTYPE html>
+<html lang="en" data-theme="auto">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#1a1a2e" media="(prefers-color-scheme: dark)">
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>{{block "title" .}}My Library{{end}}</title>
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
+    <link rel="apple-touch-icon" href="/static/icon-192.png">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <nav class="top-nav">
+        <div class="nav-inner">
+            <a href="/" class="nav-brand">My Library</a>
+            <div class="nav-links">
+                <a href="/" class="nav-link {{if eq .Page "home"}}active{{end}}">Home</a>
+                <a href="/books" class="nav-link {{if eq .Page "books"}}active{{end}}">Books</a>
+                <a href="/shelves" class="nav-link {{if eq .Page "shelves"}}active{{end}}">Shelves</a>
+                <a href="/stats" class="nav-link {{if eq .Page "stats"}}active{{end}}">Stats</a>
+                <a href="/scan" class="nav-link {{if eq .Page "scan"}}active{{end}}">Scan</a>
+            </div>
+            <button class="theme-toggle" id="themeToggle" title="Toggle theme" aria-label="Toggle theme">
+                <span class="theme-icon-light">&#9788;</span>
+                <span class="theme-icon-dark">&#9790;</span>
+            </button>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        {{block "content" .}}{{end}}
+    </main>
+
+    <nav class="bottom-nav">
+        <a href="/" class="bottom-nav-item {{if eq .Page "home"}}active{{end}}">
+            <span class="nav-icon">&#8962;</span>
+            <span>Home</span>
+        </a>
+        <a href="/books" class="bottom-nav-item {{if eq .Page "books"}}active{{end}}">
+            <span class="nav-icon">&#128214;</span>
+            <span>Books</span>
+        </a>
+        <a href="/books/new" class="bottom-nav-item">
+            <span class="nav-icon add-icon">+</span>
+            <span>Add</span>
+        </a>
+        <a href="/shelves" class="bottom-nav-item {{if eq .Page "shelves"}}active{{end}}">
+            <span class="nav-icon">&#128218;</span>
+            <span>Shelves</span>
+        </a>
+        <a href="/stats" class="bottom-nav-item {{if eq .Page "stats"}}active{{end}}">
+            <span class="nav-icon">&#128200;</span>
+            <span>Stats</span>
+        </a>
+    </nav>
+
+    <script src="/static/app.js"></script>
+    {{block "scripts" .}}{{end}}
+</body>
+</html>
+{{end}}

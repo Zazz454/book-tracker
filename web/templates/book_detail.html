@@ -1,0 +1,172 @@
+{{template "layout" .}}
+
+{{define "title"}}{{.Book.Title}} - My Library{{end}}
+
+{{define "content"}}
+<div class="book-detail">
+    <div class="detail-header">
+        <a href="/books" class="back-link">&larr; Back to Books</a>
+        <div class="detail-actions">
+            <a href="/books/{{.Book.ID}}/edit" class="btn btn-sm">Edit</a>
+            <button class="btn btn-sm btn-danger" onclick="deleteBook({{.Book.ID}})">Delete</button>
+        </div>
+    </div>
+
+    <div class="detail-content">
+        <div class="detail-cover">
+            {{if .Book.CoverPath}}
+            <img src="/{{.Book.CoverPath}}" alt="{{.Book.Title}}" class="cover-large">
+            {{else}}
+            <div class="cover-placeholder cover-large">
+                <span>{{.Book.Title}}</span>
+            </div>
+            {{end}}
+            <button class="btn btn-sm btn-full" onclick="refreshCover({{.Book.ID}})">Refresh Cover</button>
+        </div>
+
+        <div class="detail-meta">
+            <h1>{{.Book.Title}}</h1>
+            <p class="detail-author">by {{.Book.Author}}</p>
+
+            <div class="detail-status">
+                <span class="status-badge-lg {{statusColor .Book.Status}}">{{statusLabel .Book.Status}}</span>
+                <div class="status-actions">
+                    {{if ne .Book.Status "reading"}}
+                    <button class="btn btn-sm" onclick="setStatus({{.Book.ID}}, 'reading')">Start Reading</button>
+                    {{end}}
+                    {{if ne .Book.Status "finished"}}
+                    <button class="btn btn-sm" onclick="setStatus({{.Book.ID}}, 'finished')">Mark Finished</button>
+                    {{end}}
+                    {{if and (ne .Book.Status "unread") (ne .Book.Status "abandoned")}}
+                    <button class="btn btn-sm" onclick="setStatus({{.Book.ID}}, 'unread')">Mark Unread</button>
+                    {{end}}
+                </div>
+            </div>
+
+            <div class="detail-rating">
+                <span class="rating-label">Rating:</span>
+                <div class="rating-stars" id="ratingStars">
+                    {{range seq 5}}
+                    <button class="star-btn {{if le . $.Book.Rating}}filled{{end}}" onclick="setRating({{$.Book.ID}}, {{.}})">&#9733;</button>
+                    {{end}}
+                    {{if gt .Book.Rating 0}}
+                    <button class="star-clear" onclick="setRating({{.Book.ID}}, 0)">Clear</button>
+                    {{end}}
+                </div>
+            </div>
+
+            <div class="detail-fields">
+                {{if .Book.ISBN}}<div class="field"><span class="field-label">ISBN</span><span>{{.Book.ISBN}}</span></div>{{end}}
+                {{if .Book.Genre}}<div class="field"><span class="field-label">Genre</span><span>{{.Book.Genre}}</span></div>{{end}}
+                {{if gt .Book.Pages 0}}<div class="field"><span class="field-label">Pages</span><span>{{.Book.Pages}}</span></div>{{end}}
+                {{if gt .Book.Year 0}}<div class="field"><span class="field-label">Year</span><span>{{.Book.Year}}</span></div>{{end}}
+                {{if .Book.StartedAt}}<div class="field"><span class="field-label">Started</span><span>{{.Book.StartedAt.Format "Jan 2, 2006"}}</span></div>{{end}}
+                {{if .Book.FinishedAt}}<div class="field"><span class="field-label">Finished</span><span>{{.Book.FinishedAt.Format "Jan 2, 2006"}}</span></div>{{end}}
+            </div>
+
+            {{if .Book.Notes}}
+            <div class="detail-notes">
+                <h3>Notes</h3>
+                <p>{{.Book.Notes}}</p>
+            </div>
+            {{end}}
+
+            <div class="detail-shelves">
+                <h3>Shelves</h3>
+                <div class="tag-list">
+                    {{range .Book.Shelves}}
+                    <a href="/shelves/{{.ID}}" class="tag shelf-tag">{{.Name}}</a>
+                    {{end}}
+                    <div class="add-shelf">
+                        <select id="addShelfSelect" onchange="addToShelf({{$.Book.ID}}, this.value)">
+                            <option value="">+ Add to shelf</option>
+                            {{range .AllShelves}}
+                            <option value="{{.ID}}">{{.Name}}</option>
+                            {{end}}
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="detail-tags">
+                <h3>Tags</h3>
+                <div class="tag-list">
+                    {{range .Book.Tags}}
+                    <span class="tag">
+                        {{.Name}}
+                        <button class="tag-remove" onclick="removeTag({{$.Book.ID}}, {{.ID}})">&times;</button>
+                    </span>
+                    {{end}}
+                    <form class="inline-form" onsubmit="addTag(event, {{.Book.ID}})">
+                        <input type="text" placeholder="Add tag..." class="tag-input" id="newTagInput">
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+async function setStatus(id, status) {
+    await fetch(`/api/books/${id}/status`, {
+        method: 'PATCH',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({status})
+    });
+    location.reload();
+}
+
+async function setRating(id, rating) {
+    await fetch(`/api/books/${id}/rating`, {
+        method: 'PATCH',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({rating})
+    });
+    location.reload();
+}
+
+async function deleteBook(id) {
+    if (!confirm('Delete this book?')) return;
+    await fetch(`/api/books/${id}`, {method: 'DELETE'});
+    window.location = '/books';
+}
+
+async function refreshCover(id) {
+    const btn = event.target;
+    btn.textContent = 'Fetching...';
+    btn.disabled = true;
+    await fetch(`/api/books/${id}/cover/refresh`, {method: 'POST'});
+    setTimeout(() => location.reload(), 2000);
+}
+
+async function addToShelf(bookId, shelfId) {
+    if (!shelfId) return;
+    await fetch(`/api/shelves/${shelfId}/books`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({book_id: bookId})
+    });
+    location.reload();
+}
+
+async function removeTag(bookId, tagId) {
+    await fetch(`/api/books/${bookId}/tags/${tagId}`, {method: 'DELETE'});
+    location.reload();
+}
+
+async function addTag(e, bookId) {
+    e.preventDefault();
+    const input = document.getElementById('newTagInput');
+    const name = input.value.trim();
+    if (!name) return;
+    await fetch(`/api/books/${bookId}/tags`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({name})
+    });
+    location.reload();
+}
+</script>
+{{end}}

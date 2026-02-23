@@ -1,0 +1,128 @@
+{{template "layout" .}}
+
+{{define "title"}}Statistics - My Library{{end}}
+
+{{define "content"}}
+<div class="stats-page">
+    <h1>Reading Statistics</h1>
+
+    {{if .Stats}}
+    <section class="stats-cards">
+        <div class="stat-card">
+            <span class="stat-number">{{.Stats.TotalBooks}}</span>
+            <span class="stat-label">Total Books</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-number">{{.Stats.BooksRead}}</span>
+            <span class="stat-label">Finished</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-number">{{.Stats.BooksReading}}</span>
+            <span class="stat-label">Reading</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-number">{{.Stats.BooksUnread}}</span>
+            <span class="stat-label">Unread</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-number">{{.Stats.TotalPages}}</span>
+            <span class="stat-label">Pages Read</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-number">{{printf "%.1f" .Stats.AverageRating}}</span>
+            <span class="stat-label">Avg Rating</span>
+        </div>
+    </section>
+
+    <section class="charts-grid">
+        <div class="chart-card">
+            <h3>Books Per Month</h3>
+            <canvas id="booksPerMonthChart" width="400" height="200"></canvas>
+        </div>
+        <div class="chart-card">
+            <h3>Genre Breakdown</h3>
+            <canvas id="genreChart" width="400" height="200"></canvas>
+        </div>
+        <div class="chart-card">
+            <h3>Rating Distribution</h3>
+            <canvas id="ratingChart" width="400" height="200"></canvas>
+        </div>
+        <div class="chart-card">
+            <h3>Books Per Year</h3>
+            <canvas id="booksPerYearChart" width="400" height="200"></canvas>
+        </div>
+    </section>
+
+    {{if or .Stats.LongestBook .Stats.ShortestBook}}
+    <section class="notable-books">
+        <h2>Notable Books</h2>
+        <div class="notable-grid">
+            {{if .Stats.LongestBook}}
+            <div class="notable-card">
+                <h4>Longest Book Read</h4>
+                <a href="/books/{{.Stats.LongestBook.ID}}">{{.Stats.LongestBook.Title}}</a>
+                <span>by {{.Stats.LongestBook.Author}} - {{.Stats.LongestBook.Pages}} pages</span>
+            </div>
+            {{end}}
+            {{if .Stats.ShortestBook}}
+            <div class="notable-card">
+                <h4>Shortest Book Read</h4>
+                <a href="/books/{{.Stats.ShortestBook.ID}}">{{.Stats.ShortestBook.Title}}</a>
+                <span>by {{.Stats.ShortestBook.Author}} - {{.Stats.ShortestBook.Pages}} pages</span>
+            </div>
+            {{end}}
+        </div>
+    </section>
+    {{end}}
+
+    {{else}}
+    <div class="empty-state">
+        <h2>No statistics yet</h2>
+        <p>Add and finish some books to see your reading stats.</p>
+    </div>
+    {{end}}
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script src="/static/charts.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    fetch('/api/stats')
+        .then(r => r.json())
+        .then(stats => {
+            if (stats.books_per_month && stats.books_per_month.length > 0) {
+                drawBarChart('booksPerMonthChart',
+                    stats.books_per_month.reverse().map(m => m.month),
+                    stats.books_per_month.map(m => m.count),
+                    'Books'
+                );
+            }
+            if (stats.genre_breakdown && stats.genre_breakdown.length > 0) {
+                drawPieChart('genreChart',
+                    stats.genre_breakdown.slice(0, 8).map(g => g.genre),
+                    stats.genre_breakdown.slice(0, 8).map(g => g.count)
+                );
+            }
+            if (stats.rating_distribution && stats.rating_distribution.length > 0) {
+                const ratings = [1,2,3,4,5].map(r => {
+                    const found = stats.rating_distribution.find(d => d.rating === r);
+                    return found ? found.count : 0;
+                });
+                drawBarChart('ratingChart',
+                    ['1 Star', '2 Stars', '3 Stars', '4 Stars', '5 Stars'],
+                    ratings,
+                    'Books'
+                );
+            }
+            if (stats.books_per_year && stats.books_per_year.length > 0) {
+                drawBarChart('booksPerYearChart',
+                    stats.books_per_year.reverse().map(y => y.year.toString()),
+                    stats.books_per_year.map(y => y.count),
+                    'Books'
+                );
+            }
+        });
+});
+</script>
+{{end}}
