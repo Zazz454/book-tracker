@@ -123,6 +123,7 @@ func newWebHandlers(lib *service.Library, dataDir string) *webHandlers {
 		"scan.html",
 		"loans.html",
 		"loan_form.html",
+		"offline.html",
 	}
 
 	templates := make(map[string]*template.Template)
@@ -152,6 +153,7 @@ func (h *webHandlers) registerRoutes(mux *http.ServeMux) {
 		}
 		h.bookDetail(w, r)
 	})
+	mux.HandleFunc("/offline", h.offlinePage)
 	mux.HandleFunc("/loans", h.loanList)
 	mux.HandleFunc("/loans/new", h.loanForm)
 	mux.HandleFunc("/shelves", h.shelfList)
@@ -350,6 +352,11 @@ func (h *webHandlers) statsPage(w http.ResponseWriter, r *http.Request) {
 func (h *webHandlers) scanPage(w http.ResponseWriter, r *http.Request) {
 	data := h.baseData("scan")
 	h.render(w, "scan.html", data)
+}
+
+func (h *webHandlers) offlinePage(w http.ResponseWriter, r *http.Request) {
+	data := h.baseData("")
+	h.render(w, "offline.html", data)
 }
 
 func (h *webHandlers) loanList(w http.ResponseWriter, r *http.Request) {

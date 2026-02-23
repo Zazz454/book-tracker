@@ -1,0 +1,14 @@
+{{define "title"}}Offline - My Library{{end}}
+
+{{define "content"}}
+<div class="offline-page">
+    <div class="offline-icon">&#128214;</div>
+    <h1>You're offline</h1>
+    <p>Check your internet connection and try again.</p>
+    <p class="offline-hint">Pages you've visited before may still be available.</p>
+    <div class="offline-actions">
+        <button class="btn btn-primary" onclick="location.reload()">Try Again</button>
+        <a href="/" class="btn">Go Home</a>
+    </div>
+</div>
+{{end}}
